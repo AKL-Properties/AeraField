@@ -1,0 +1,261 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #1394b9;
+  color: #fcfcfc;
+  overflow: hidden;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+#app {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.flutter-inspired {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+}
+
+.btn-primary {
+  background: #1394b9;
+  color: #fcfcfc;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  background: #26a6c4;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(19, 148, 185, 0.3);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.fab {
+  position: fixed;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #1394b9;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fcfcfc;
+  font-size: 24px;
+  transition: all 0.2s ease;
+  z-index: 1000;
+}
+
+.fab:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.fab:active {
+  transform: scale(0.95);
+}
+
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(19, 148, 185, 0.95);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(252, 252, 252, 0.2);
+  padding: 8px 0;
+  z-index: 1000;
+}
+
+.bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.bottom-nav-item.active {
+  color: #fcfcfc;
+}
+
+.bottom-nav-item:hover {
+  color: #fcfcfc;
+}
+
+.layer-panel {
+  position: fixed;
+  top: 0;
+  right: -320px;
+  width: 320px;
+  height: 100vh;
+  background: rgba(19, 148, 185, 0.95);
+  backdrop-filter: blur(10px);
+  border-left: 1px solid rgba(252, 252, 252, 0.2);
+  transition: right 0.3s ease;
+  z-index: 1001;
+  overflow-y: auto;
+}
+
+.layer-panel.open {
+  right: 0;
+}
+
+.device-restriction {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: #1394b9;
+  color: #fcfcfc;
+  padding: 2rem;
+  text-align: center;
+}
+
+.map-container {
+  height: 100vh;
+  width: 100vw;
+  position: relative;
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  background: #1394b9;
+}
+
+.leaflet-popup-content-wrapper {
+  background: #fcfcfc;
+  color: #1394b9;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.leaflet-popup-content {
+  margin: 16px;
+}
+
+.leaflet-popup-tip {
+  background: #fcfcfc;
+}
+
+.popup-card {
+  background: #fcfcfc;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.popup-card h3 {
+  color: #1394b9;
+  margin-bottom: 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.popup-card .attribute {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid #b0d9e3;
+}
+
+.popup-card .attribute:last-child {
+  border-bottom: none;
+}
+
+.popup-card .attribute .key {
+  color: #1394b9;
+  font-weight: 500;
+}
+
+.popup-card .attribute .value {
+  color: #1394b9;
+}
+
+.loading-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(135deg, #1394b9 0%, #26a6c4 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.loading-animation {
+  width: 500px;
+  height: 500px;
+  max-width: 80vw;
+  max-height: 60vh;
+}
+
+.loading-text h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #fcfcfc, #e0f3f8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.5rem;
+}
+
+.loading-text p {
+  color: #fcfcfc;
+  font-size: 1rem;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+@media (max-width: 600px) {
+  .loading-text h1 {
+    font-size: 2rem;
+  }
+  
+  .loading-animation {
+    width: 500px;
+    height: 500px;
+  }
+  
+  .loading-container {
+    gap: 1.5rem;
+    padding: 1.5rem;
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "AeraField",
+  "short_name": "AeraField",
+  "description": "Field navigation and geospatial data interaction platform for Aera personnel",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#1394b9",
+  "background_color": "#1394b9",
+  "categories": ["productivity", "utilities", "navigation"],
+  "icons": [
+    {
+      "src": "/icon.ico",
+      "sizes": "16x16 32x32 48x48",
+      "type": "image/x-icon",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ]
+}
