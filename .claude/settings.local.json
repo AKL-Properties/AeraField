@@ -30,7 +30,8 @@
       "WebFetch(domain:docs.anthropic.com)",
       "Bash(timeout 10 npm run dev)",
       "mcp__ide__getDiagnostics",
-      "Bash(timeout 10 npm run build:*)"
+      "Bash(timeout 10 npm run build:*)",
+      "Bash(del:*)"
     ],
     "deny": []
   }
