@@ -11,7 +11,7 @@
       <input
         ref="fileInput"
         type="file"
-        accept=".gpx"
+        accept=".kmz"
         @change="handleFileUpload"
         style="display: none;"
       />
@@ -19,7 +19,7 @@
         @click="$refs.fileInput.click()"
         class="add-layer-button"
       >
-        📍 Add GPX Layer
+        📍 Add KMZ Layer
       </button>
     </div>
 
@@ -32,7 +32,7 @@
       <div class="empty-icon">📂</div>
       <p>No layers found.</p>
       <p class="empty-subtitle">
-        Add .geojson files to the /data directory or upload GPX files.
+        Add .geojson files to the /data directory or upload KMZ files.
       </p>
     </div>
 
@@ -73,7 +73,7 @@ export default {
     mapRef: Object
   },
   setup(props) {
-    const { geoJsonData, loading, addGPXLayer } = useGeoJSONLoader()
+    const { geoJsonData, loading, addKMZLayer } = useGeoJSONLoader()
     const layerVisibility = ref({})
     
     const mapInstance = inject('mapInstance', null)
@@ -110,9 +110,9 @@ export default {
 
     const handleFileUpload = async (event) => {
       const file = event.target.files[0]
-      if (file && file.name.toLowerCase().endsWith('.gpx')) {
+      if (file && file.name.toLowerCase().endsWith('.kmz')) {
         try {
-          const newLayer = await addGPXLayer(file)
+          const newLayer = await addKMZLayer(file)
           layerVisibility.value[newLayer.name] = true
           
           if (props.mapRef && props.mapRef.addLayer) {
@@ -123,8 +123,8 @@ export default {
             mapInstance.value.addLayer(newLayer.name, newLayer.data)
           }
         } catch (error) {
-          console.error('Failed to upload GPX file:', error)
-          alert('Failed to load GPX file. Please check the file format.')
+          console.error('Failed to upload KMZ file:', error)
+          alert('Failed to load KMZ file. Please check the file format.')
         }
       }
       event.target.value = ''

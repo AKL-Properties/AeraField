@@ -1,16 +1,14 @@
 <template>
   <div v-if="!isValidDevice" class="device-restriction">
     <div class="restriction-card">
-      <div class="icon-circle">
-        📱
-      </div>
-      <h1 class="title">AeraField</h1>
+      <div class="logo-circle">
+          <img src="/logo.png" alt="AeraField Logo" style="width:100px; height:60px;" />
+        </div>
       <p class="message">
-        AeraField is available on mobile and tablet devices only. Please switch to a supported device.
+       This app is only available on mobile and tablet devices. Please switch to a supported device.
       </p>
       <div class="device-icons">
-        <span>📱</span>
-        <span>📱</span>
+
       </div>
     </div>
   </div>
@@ -54,7 +52,7 @@ export default {
   justify-content: center;
   height: 100vh;
   width: 100vw;
-  background: linear-gradient(135deg, #1394b9 0%, #fcfcfc 100%);
+  background: #1294b9;
   color: #fcfcfc;
   text-align: center;
   padding: 2rem;
@@ -68,14 +66,14 @@ export default {
   border-radius: 20px;
   backdrop-filter: blur(10px);
   border: 1px solid rgba(252, 252, 252, 0.2);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 40px rgba(18, 148, 185, 0.3);
 }
 
 .icon-circle {
   width: 80px;
   height: 80px;
   margin: 0 auto 2rem;
-  background: linear-gradient(135deg, #1394b9, #26a6c4);
+  background: #1294b9;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -87,10 +85,7 @@ export default {
   font-size: 1.8rem;
   margin-bottom: 1rem;
   font-weight: 600;
-  background: linear-gradient(135deg, #1394b9, #26a6c4);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #fcfcfc;
 }
 
 .message {

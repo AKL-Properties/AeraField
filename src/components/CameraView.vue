@@ -3,7 +3,7 @@
     <div class="camera-header">
       <h2>Camera</h2>
       <div class="photo-count">
-        Photos: {{ capturedPhotos.length }}
+        Photos: {{ sessionPhotos.length }}
       </div>
     </div>
 
@@ -22,16 +22,25 @@
 
       <button 
         @click="exportPhotos" 
-        :disabled="capturedPhotos.length === 0"
+        :disabled="sessionPhotos.length === 0"
         class="export-btn"
       >
         <font-awesome-icon :icon="faDownload" />
-        Export Photos ({{ capturedPhotos.length }})
+        Export ZIP ({{ sessionPhotos.length }})
+      </button>
+
+      <button 
+        @click="exportPhotosAsKMZFile" 
+        :disabled="sessionPhotos.filter(p => p.location).length === 0"
+        class="export-kmz-btn"
+      >
+        <font-awesome-icon :icon="faDownload" />
+        Export KMZ ({{ sessionPhotos.filter(p => p.location).length }})
       </button>
 
       <button 
         @click="clearPhotos" 
-        :disabled="capturedPhotos.length === 0"
+        :disabled="sessionPhotos.length === 0"
         class="clear-btn"
       >
         <font-awesome-icon :icon="faTrash" />
@@ -39,9 +48,9 @@
       </button>
     </div>
 
-    <div class="photos-grid" v-if="capturedPhotos.length > 0">
+    <div class="photos-grid" v-if="sessionPhotos.length > 0">
       <div 
-        v-for="(photo, index) in capturedPhotos" 
+        v-for="(photo, index) in sessionPhotos" 
         :key="photo.id"
         class="photo-item"
       >
@@ -76,11 +85,12 @@
 </template>
 
 <script>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import { faCamera, faDownload, faTrash } from '@fortawesome/free-solid-svg-icons'
 import piexif from 'piexifjs'
 import JSZip from 'jszip'
+import { useSessionPhotos } from '../composables/useSessionPhotos'
 
 export default {
   name: 'CameraView',
@@ -91,6 +101,26 @@ export default {
     const fileInput = ref(null)
     const isCapturing = ref(false)
     const capturedPhotos = reactive([])
+    
+    // Session photo management
+    const { 
+      sessionPhotos, 
+      isSessionActive, 
+      addPhotoToSession, 
+      exportPhotosAsZip, 
+      exportPhotosAsKMZ,
+      startSession
+    } = useSessionPhotos()
+
+    // Ensure session is active for camera usage
+    if (!isSessionActive.value) {
+      startSession()
+    }
+
+    // Computed property to show combined photos
+    const allPhotos = computed(() => {
+      return [...capturedPhotos, ...sessionPhotos.value]
+    })
 
     const capturePhoto = async () => {
       try {
@@ -236,7 +266,9 @@ export default {
               originalSize: file.size
             }
 
+            // Add to both local array and session storage
             capturedPhotos.push(photo)
+            addPhotoToSession(photo)
             
           } catch (error) {
             console.error('Error processing photo:', error)
@@ -348,27 +380,27 @@ export default {
     }
 
     const exportPhotos = async () => {
-      if (capturedPhotos.length === 0) return
+      if (sessionPhotos.value.length === 0) return
 
       try {
-        const zip = new JSZip()
-        
-        for (const photo of capturedPhotos) {
-          const base64Data = photo.data.split(',')[1]
-          zip.file(photo.filename, base64Data, { base64: true })
-        }
-        
-        const content = await zip.generateAsync({ type: 'blob' })
-        const link = document.createElement('a')
-        link.href = URL.createObjectURL(content)
-        link.download = `aerafield_photos_${new Date().toISOString().split('T')[0]}.zip`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        
+        await exportPhotosAsZip()
+        alert(`Successfully exported ${sessionPhotos.value.length} photos as ZIP`)
       } catch (error) {
         console.error('Error exporting photos:', error)
-        alert('Error exporting photos. Please try again.')
+        alert(`Error exporting photos: ${error.message}`)
+      }
+    }
+
+    const exportPhotosAsKMZFile = async () => {
+      if (sessionPhotos.value.length === 0) return
+
+      try {
+        await exportPhotosAsKMZ()
+        const geotaggedCount = sessionPhotos.value.filter(p => p.location).length
+        alert(`Successfully exported ${geotaggedCount} geotagged photos as KMZ`)
+      } catch (error) {
+        console.error('Error exporting photos as KMZ:', error)
+        alert(`Error exporting KMZ: ${error.message}`)
       }
     }
 
@@ -386,10 +418,12 @@ export default {
       fileInput,
       isCapturing,
       capturedPhotos,
+      sessionPhotos,
       capturePhoto,
       handleFileSelect,
       downloadSinglePhoto,
       exportPhotos,
+      exportPhotosAsKMZFile,
       clearPhotos,
       formatTimestamp,
       faCamera,
@@ -405,7 +439,7 @@ export default {
   padding: 1rem;
   padding-bottom: 100px;
   min-height: 100vh;
-  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+  background: #1294b9;
   color: white;
 }
 
@@ -436,7 +470,7 @@ export default {
   margin-bottom: 2rem;
 }
 
-.capture-btn, .export-btn, .clear-btn {
+.capture-btn, .export-btn, .export-kmz-btn, .clear-btn {
   padding: 1rem;
   border: none;
   border-radius: 12px;
@@ -487,6 +521,20 @@ export default {
 }
 
 .export-btn:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+
+.export-kmz-btn {
+  background: #ff9800;
+  color: white;
+}
+
+.export-kmz-btn:hover {
+  background: #f57c00;
+}
+
+.export-kmz-btn:disabled {
   background: #666;
   cursor: not-allowed;
 }

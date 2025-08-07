@@ -1,82 +1,92 @@
 import { ref, onMounted } from 'vue'
+import JSZip from 'jszip'
 
 export function useGeoJSONLoader() {
   const geoJsonData = ref([])
   const loading = ref(true)
   const error = ref(null)
 
-  const parseGPX = (gpxText) => {
-    const parser = new DOMParser()
-    const gpxDoc = parser.parseFromString(gpxText, 'application/xml')
+  const parseKMZ = async (kmzFile) => {
+    const zip = new JSZip()
+    const unzipped = await zip.loadAsync(kmzFile)
     
-    const tracks = gpxDoc.querySelectorAll('trk')
-    const routes = gpxDoc.querySelectorAll('rte')
-    const waypoints = gpxDoc.querySelectorAll('wpt')
+    // Find the KML file in the KMZ archive (usually named doc.kml)
+    let kmlContent = null
+    for (const filename in unzipped.files) {
+      if (filename.toLowerCase().endsWith('.kml')) {
+        kmlContent = await unzipped.files[filename].async('text')
+        break
+      }
+    }
+    
+    if (!kmlContent) {
+      throw new Error('No KML file found in KMZ archive')
+    }
+    
+    return parseKML(kmlContent)
+  }
+  
+  const parseKML = (kmlText) => {
+    const parser = new DOMParser()
+    const kmlDoc = parser.parseFromString(kmlText, 'application/xml')
     
     const features = []
     
-    tracks.forEach(track => {
-      const segments = track.querySelectorAll('trkseg')
-      segments.forEach(segment => {
-        const points = segment.querySelectorAll('trkpt')
-        const coordinates = Array.from(points).map(pt => [
-          parseFloat(pt.getAttribute('lon')),
-          parseFloat(pt.getAttribute('lat'))
-        ])
+    // Parse LineStrings (tracks/routes)
+    const lineStrings = kmlDoc.querySelectorAll('LineString')
+    lineStrings.forEach(lineString => {
+      const coordinates = lineString.querySelector('coordinates')
+      if (coordinates) {
+        const coordsText = coordinates.textContent.trim()
+        const coordsArray = coordsText.split(/\s+/).map(coord => {
+          const [lng, lat, alt] = coord.split(',').map(Number)
+          return [lng, lat]
+        }).filter(coord => coord.length === 2 && !isNaN(coord[0]) && !isNaN(coord[1]))
         
-        if (coordinates.length > 0) {
+        if (coordsArray.length > 0) {
+          const placemark = lineString.closest('Placemark')
+          const name = placemark?.querySelector('name')?.textContent || 'Route'
+          
           features.push({
             type: 'Feature',
             properties: {
-              name: track.querySelector('name')?.textContent || 'Track',
+              name,
               type: 'track'
             },
             geometry: {
               type: 'LineString',
-              coordinates
+              coordinates: coordsArray
             }
           })
         }
-      })
-    })
-    
-    routes.forEach(route => {
-      const points = route.querySelectorAll('rtept')
-      const coordinates = Array.from(points).map(pt => [
-        parseFloat(pt.getAttribute('lon')),
-        parseFloat(pt.getAttribute('lat'))
-      ])
-      
-      if (coordinates.length > 0) {
-        features.push({
-          type: 'Feature',
-          properties: {
-            name: route.querySelector('name')?.textContent || 'Route',
-            type: 'route'
-          },
-          geometry: {
-            type: 'LineString',
-            coordinates
-          }
-        })
       }
     })
     
-    waypoints.forEach(waypoint => {
-      features.push({
-        type: 'Feature',
-        properties: {
-          name: waypoint.querySelector('name')?.textContent || 'Waypoint',
-          type: 'waypoint'
-        },
-        geometry: {
-          type: 'Point',
-          coordinates: [
-            parseFloat(waypoint.getAttribute('lon')),
-            parseFloat(waypoint.getAttribute('lat'))
-          ]
+    // Parse Points (waypoints)
+    const points = kmlDoc.querySelectorAll('Point')
+    points.forEach(point => {
+      const coordinates = point.querySelector('coordinates')
+      if (coordinates) {
+        const coordsText = coordinates.textContent.trim()
+        const [lng, lat] = coordsText.split(',').map(Number)
+        
+        if (!isNaN(lng) && !isNaN(lat)) {
+          const placemark = point.closest('Placemark')
+          const name = placemark?.querySelector('name')?.textContent || 'Point'
+          
+          features.push({
+            type: 'Feature',
+            properties: {
+              name,
+              type: 'waypoint'
+            },
+            geometry: {
+              type: 'Point',
+              coordinates: [lng, lat]
+            }
+          })
         }
-      })
+      }
     })
     
     return {
@@ -123,23 +133,22 @@ export function useGeoJSONLoader() {
     }
   }
   
-  const addGPXLayer = async (file) => {
+  const addKMZLayer = async (file) => {
     try {
-      const text = await file.text()
-      const parsedData = parseGPX(text)
-      const layerName = file.name.replace('.gpx', '').replace(/[-_]/g, ' ')
+      const parsedData = await parseKMZ(file)
+      const layerName = file.name.replace('.kmz', '').replace(/[-_]/g, ' ')
       
       const newLayer = {
         name: layerName,
         filename: file.name,
         data: parsedData,
-        type: 'gpx'
+        type: 'kmz'
       }
       
       geoJsonData.value = [...geoJsonData.value, newLayer]
       return newLayer
     } catch (err) {
-      console.error('Error adding GPX layer:', err)
+      console.error('Error adding KMZ layer:', err)
       throw err
     }
   }
@@ -153,6 +162,6 @@ export function useGeoJSONLoader() {
     loading, 
     error,
     reload: loadGeoJSONFiles,
-    addGPXLayer
+    addKMZLayer
   }
 }

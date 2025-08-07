@@ -15,9 +15,9 @@
       @mousedown="handleMouseDown"
       @mouseup="handleMouseUp"
       @mouseleave="handleMouseLeave"
-      :class="['gps-fab', { 'tracking': isTracking }]"
+      :class="['gps-fab', { 'locating': isLocating, 'tracking': isTracking, 'disabled': isTracking }]"
     >
-      <font-awesome-icon :icon="isTracking ? 'stop' : 'location-crosshairs'" />
+      <font-awesome-icon :icon="'location-dot'" />
     </button>
 
     <div v-if="loading" class="loading-indicator">
@@ -34,6 +34,8 @@
 import { ref, onMounted, onUnmounted, watch, inject } from 'vue'
 import L from 'leaflet'
 import { useGeoJSONLoader } from '../composables/useGeoJSONLoader'
+import { useSessionPhotos } from '../composables/useSessionPhotos'
+import { usePhotoMarkers } from '../composables/usePhotoMarkers'
 
 export default {
   name: 'MapView',
@@ -46,11 +48,16 @@ export default {
     const layers = ref(new Map())
     const { geoJsonData, loading, error } = useGeoJSONLoader()
     
-    // GPS tracking variables
+    // Session photo management
+    const { sessionPhotos } = useSessionPhotos()
+    const photoMarkersComposable = ref(null)
+    
+    // GPS location variables
+    const isLocating = ref(false)
     const isTracking = ref(false)
     const watchId = ref(null)
-    const trackPoints = ref([])
-    const currentRoute = ref(null)
+    const userLocationMarker = ref(null)
+    const userAccuracyCircle = ref(null)
     
     // Touch gesture variables
     const touchGestures = ref({
@@ -71,49 +78,89 @@ export default {
       const map = L.map(mapContainer.value, {
         center: [14.5995, 120.9842],
         zoom: 13,
+        preferCanvas: true,
         zoomControl: false,
         scrollWheelZoom: false,
         dragging: true,
         touchZoom: true,
-        doubleClickZoom: false,
+        bounceAtZoomLimits: true,
+        doubleClickZoom: true,
         boxZoom: false,
         keyboard: false,
         tap: true,
         tapTolerance: 15,
-        zoomSnap: 0.5,
+        updateWhenIdle: false,
+        updateWhenZooming: true,
+        zoomSnap: 0.25,
         zoomDelta: 0.5,
         wheelPxPerZoomLevel: 60
       })
 
-      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      // Primary satellite basemap - optimized for offline caching
+      const basemapLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
         attribution: '© Esri',
         maxZoom: 18,
-        subdomains: ['server', 'services']
-      }).addTo(map)
+        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+        retryDelay: 2000,
+        retryAttempts: 5,
+        keepBuffer: 3,
+        updateWhenIdle: false,
+        updateWhenZooming: true,
+        crossOrigin: true
+      })
+      
+      // Backup basemap for better reliability
+      const backupBasemap = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '© Esri',
+        maxZoom: 18,
+        keepBuffer: 3,
+        updateWhenIdle: false,
+        updateWhenZooming: true,
+        crossOrigin: true,
+        retryDelay: 2000,
+        retryAttempts: 5
+      })
+      
+      let tileErrorCount = 0
+      let switchToBackup = false
+      
+      basemapLayer.addTo(map)
+      
+      // Enhanced error handling with automatic fallback and offline detection
+      basemapLayer.on('tileerror', (e) => {
+        tileErrorCount++
+        console.warn('Primary basemap tile error:', e.tile.src, 'Error count:', tileErrorCount)
+        
+        // Switch to backup after fewer errors for better responsiveness
+        if (tileErrorCount > 5 && !switchToBackup) {
+          console.log('Switching to backup basemap due to repeated errors')
+          switchToBackup = true
+          map.removeLayer(basemapLayer)
+          backupBasemap.addTo(map)
+        }
+      })
+      
+      basemapLayer.on('tileload', (e) => {
+        // Reset error count on successful loads
+        if (tileErrorCount > 0) {
+          tileErrorCount = Math.max(0, tileErrorCount - 2) // Reset faster on success
+        }
+      })
+      
+      // Handle backup basemap errors - be more tolerant for offline scenarios
+      backupBasemap.on('tileerror', (e) => {
+        console.warn('Backup basemap tile error (likely offline):', e.tile.src)
+        // Don't switch away from backup - let service worker handle caching
+      })
+      
+      // Monitor for successful tile loads to detect online status
+      backupBasemap.on('tileload', (e) => {
+        console.log('Backup basemap tile loaded successfully')
+      })
 
 
       map.on('locationfound', (e) => {
-        const radius = e.accuracy / 2
-        
-        map.eachLayer((layer) => {
-          if (layer.options && layer.options.className === 'location-marker') {
-            map.removeLayer(layer)
-          }
-        })
-
-        L.marker(e.latlng, {
-          className: 'location-marker'
-        }).addTo(map)
-          .bindPopup(`You are within ${radius} meters of this point`)
-          .openPopup()
-
-        L.circle(e.latlng, radius, {
-          className: 'location-marker',
-          color: '#1394b9',
-          fillColor: '#1394b9',
-          fillOpacity: 0.1,
-          weight: 2
-        }).addTo(map)
+        updateUserLocationMarker(e.latlng, e.accuracy)
       })
 
       map.on('locationerror', (e) => {
@@ -121,6 +168,53 @@ export default {
       })
 
       mapInstance.value = map
+      
+      // Initialize photo markers after map is ready
+      photoMarkersComposable.value = usePhotoMarkers(mapInstance)
+    }
+
+    const ensurePopupInViewport = (popupElement) => {
+      if (!popupElement) return
+
+      const popup = popupElement.querySelector('.leaflet-popup')
+      if (!popup) return
+
+      const rect = popup.getBoundingClientRect()
+      const viewport = {
+        width: window.innerWidth,
+        height: window.innerHeight
+      }
+
+      let adjustmentX = 0
+      let adjustmentY = 0
+
+      // Check horizontal bounds
+      if (rect.left < 20) {
+        adjustmentX = 20 - rect.left
+      } else if (rect.right > viewport.width - 20) {
+        adjustmentX = viewport.width - 20 - rect.right
+      }
+
+      // Check vertical bounds
+      if (rect.top < 20) {
+        adjustmentY = 20 - rect.top
+      } else if (rect.bottom > viewport.height - 20) {
+        adjustmentY = viewport.height - 20 - rect.bottom
+      }
+
+      // Apply adjustments
+      if (adjustmentX !== 0 || adjustmentY !== 0) {
+        const currentTransform = popup.style.transform || ''
+        const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/)
+        
+        const currentX = translateMatch ? parseFloat(translateMatch[1]) : 0
+        const currentY = translateMatch ? parseFloat(translateMatch[2]) : 0
+        
+        const newX = currentX + adjustmentX
+        const newY = currentY + adjustmentY
+        
+        popup.style.transform = `translate(${newX}px, ${newY}px)`
+      }
     }
 
     const loadGeoJSONLayers = () => {
@@ -149,7 +243,7 @@ export default {
             }
             // Default styling for features without symbology
             return {
-              color: '#1394b9',
+              color: '#1294b9',
               weight: 2,
               opacity: 1,
               fillColor: 'transparent',
@@ -166,15 +260,36 @@ export default {
                   </div>
                 `).join('')
 
-              layer.bindPopup(`
+              const popup = L.popup({
+                maxWidth: 280,
+                maxHeight: 400,
+                className: 'custom-popup',
+                autoPan: true,
+                autoPanPadding: [20, 20],
+                autoClose: false,
+                closeOnEscapeKey: false,
+                keepInView: true,
+                closeButton: true
+              }).setContent(`
                 <div class="popup-card">
                   <h3>${name}</h3>
-                  ${popupContent}
+                  <div class="popup-content">
+                    ${popupContent}
+                  </div>
                 </div>
-              `, {
-                maxWidth: 300,
-                className: 'custom-popup'
+              `)
+
+              // Add custom positioning logic to ensure viewport containment
+              popup.on('add', (e) => {
+                setTimeout(() => {
+                  const popupElement = e.target._container
+                  if (popupElement) {
+                    ensurePopupInViewport(popupElement)
+                  }
+                }, 10)
               })
+
+              layer.bindPopup(popup)
             }
           }
         })
@@ -307,190 +422,173 @@ export default {
       })
     }
 
-    const generateGPXString = (points) => {
-      const startTime = points.length > 0 ? new Date(points[0].timestamp) : new Date()
-      const gpxHeader = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="AeraField" xmlns="http://www.topografix.com/GPX/1/1">
-  <metadata>
-    <name>AeraField Tracked Route</name>
-    <time>${startTime.toISOString()}</time>
-  </metadata>
-  <trk>
-    <name>Route ${startTime.toISOString().split('T')[0]}</name>
-    <trkseg>`
-      
-      const trackPoints = points.map(point => {
-        const time = new Date(point.timestamp).toISOString()
-        return `      <trkpt lat="${point.lat}" lon="${point.lng}">
-        <ele>${point.altitude || 0}</ele>
-        <time>${time}</time>
-      </trkpt>`
-      }).join('\n')
-      
-      const gpxFooter = `    </trkseg>
-  </trk>
-</gpx>`
-      
-      return gpxHeader + '\n' + trackPoints + '\n' + gpxFooter
-    }
 
-    const downloadGPXFile = (gpxString) => {
-      const blob = new Blob([gpxString], { type: 'application/gpx+xml' })
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(blob)
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0]
-      link.download = `tracked_route_${timestamp}.gpx`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(link.href)
-      return `tracked_route_${timestamp}.gpx`
-    }
 
-    const loadGPXToMap = (gpxString, filename) => {
-      try {
-        const parser = new DOMParser()
-        const gpxDoc = parser.parseFromString(gpxString, 'text/xml')
-        const trackPoints = gpxDoc.querySelectorAll('trkpt')
-        
-        if (trackPoints.length === 0) return
-        
-        const routeCoords = Array.from(trackPoints).map(point => [
-          parseFloat(point.getAttribute('lat')),
-          parseFloat(point.getAttribute('lon'))
-        ])
-        
-        const routeLayer = L.polyline(routeCoords, {
-          color: '#ff6b35',
-          weight: 4,
-          opacity: 0.8
-        }).addTo(mapInstance.value)
-        
-        const layerName = filename.replace('.gpx', '')
-        layers.value.set(layerName, routeLayer)
-        
-        mapInstance.value.fitBounds(routeLayer.getBounds(), {
-          padding: [20, 20]
-        })
-        
-        console.log(`Loaded GPX route: ${layerName}`)
-      } catch (error) {
-        console.error('Error loading GPX to map:', error)
+
+    const updateUserLocationMarker = (latlng, accuracy) => {
+      const radius = accuracy / 2
+      
+      // Remove existing user location markers
+      if (userLocationMarker.value) {
+        mapInstance.value.removeLayer(userLocationMarker.value)
+      }
+      if (userAccuracyCircle.value) {
+        mapInstance.value.removeLayer(userAccuracyCircle.value)
+      }
+
+      // Create new marker
+      userLocationMarker.value = L.circleMarker(latlng, {
+        className: 'user-location-marker',
+        radius: 8,
+        color: '#ffffff',
+        weight: 3,
+        fillColor: '#1294b9',
+        fillOpacity: 1
+      }).addTo(mapInstance.value)
+
+      // Create accuracy circle
+      userAccuracyCircle.value = L.circle(latlng, radius, {
+        className: 'user-location-accuracy',
+        color: '#1294b9',
+        fillColor: '#1294b9',
+        fillOpacity: 0.1,
+        weight: 2
+      }).addTo(mapInstance.value)
+
+      // Update popup with enhanced styling and viewport containment
+      const locationPopup = L.popup({
+        maxWidth: 280,
+        maxHeight: 200,
+        className: 'custom-popup location-popup',
+        autoPan: true,
+        autoPanPadding: [20, 20],
+        autoClose: false,
+        closeOnEscapeKey: false,
+        keepInView: true,
+        closeButton: true
+      }).setContent(`
+        <div class="popup-card">
+          <h3>Your Location</h3>
+          <div class="popup-content">
+            <div class="popup-attribute">
+              <span class="key">Accuracy:</span>
+              <span class="value">${Math.round(radius)} meters</span>
+            </div>
+          </div>
+        </div>
+      `)
+
+      // Add custom positioning logic
+      locationPopup.on('add', (e) => {
+        setTimeout(() => {
+          const popupElement = e.target._container
+          if (popupElement) {
+            ensurePopupInViewport(popupElement)
+          }
+        }, 10)
+      })
+
+      userLocationMarker.value.bindPopup(locationPopup)
+
+      // Only open popup and center map if not in continuous tracking mode
+      if (!isTracking.value) {
+        userLocationMarker.value.openPopup()
+        mapInstance.value.setView(latlng, Math.max(mapInstance.value.getZoom(), 16))
+      } else if (isTracking.value) {
+        // In tracking mode, smoothly pan to new location
+        mapInstance.value.panTo(latlng, { animate: true, duration: 1 })
       }
     }
 
-    const startTracking = async () => {
+    const startLocationTracking = async () => {
       try {
         await checkLocationPermissions()
         
-        trackPoints.value = []
-        isTracking.value = true
-        
-        if (currentRoute.value) {
-          mapInstance.value.removeLayer(currentRoute.value)
+        if (watchId.value) {
+          navigator.geolocation.clearWatch(watchId.value)
         }
+
+        const options = {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 5000 // Accept positions up to 5 seconds old
+        }
+
+        // For Safari iOS, use different options
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
         
+        if (isSafari && isIOS) {
+          options.timeout = 15000
+          options.maximumAge = 10000
+        }
+
         watchId.value = navigator.geolocation.watchPosition(
           (position) => {
-            const { latitude, longitude, altitude } = position.coords
-            const timestamp = position.timestamp
-            
-            const newPoint = {
-              lat: latitude,
-              lng: longitude,
-              altitude: altitude,
-              timestamp: timestamp
-            }
-            
-            trackPoints.value.push(newPoint)
-            
-            if (trackPoints.value.length === 1) {
-              mapInstance.value.setView([latitude, longitude], 16)
-            }
-            
-            if (trackPoints.value.length > 1) {
-              if (currentRoute.value) {
-                mapInstance.value.removeLayer(currentRoute.value)
-              }
-              
-              const routeCoords = trackPoints.value.map(point => [point.lat, point.lng])
-              currentRoute.value = L.polyline(routeCoords, {
-                color: '#ff6b35',
-                weight: 4,
-                opacity: 0.8
-              }).addTo(mapInstance.value)
-            }
-            
-            L.marker([latitude, longitude], {
-              className: 'current-location-marker'
-            }).addTo(mapInstance.value)
-            
-            mapInstance.value.eachLayer((layer) => {
-              if (layer.options && layer.options.className === 'current-location-marker' && layer !== currentRoute.value) {
-                if (trackPoints.value.length > 5) {
-                  mapInstance.value.removeLayer(layer)
-                }
-              }
-            })
+            const latlng = [position.coords.latitude, position.coords.longitude]
+            updateUserLocationMarker(latlng, position.coords.accuracy)
           },
           (error) => {
-            console.error('GPS tracking error:', error)
-            stopTracking()
+            console.warn('Location tracking error:', error)
+            // Keep tracking even on errors, except permission denied
+            if (error.code === error.PERMISSION_DENIED) {
+              console.error('Location permission denied. Cannot track user location.')
+              alert('Location permission denied. Please enable location services to track your position.')
+            }
+            // For other errors, keep trying - don't stop tracking
           },
-          {
-            enableHighAccuracy: true,
-            timeout: 30000,
-            maximumAge: 5000
-          }
+          options
         )
+
+        isTracking.value = true
+        console.log('Started continuous location tracking - will run indefinitely')
         
-        console.log('GPS tracking started')
       } catch (error) {
-        console.error('Failed to start tracking:', error)
+        console.error('Failed to start location tracking:', error)
         alert(`GPS Error: ${error.message}`)
-        isTracking.value = false
       }
     }
 
-    const stopTracking = () => {
+    const stopLocationTracking = () => {
       if (watchId.value) {
         navigator.geolocation.clearWatch(watchId.value)
         watchId.value = null
       }
-      
       isTracking.value = false
-      
-      if (trackPoints.value.length > 0) {
-        const gpxString = generateGPXString(trackPoints.value)
-        const filename = downloadGPXFile(gpxString)
-        
-        setTimeout(() => {
-          loadGPXToMap(gpxString, filename)
-        }, 500)
-        
-        console.log(`Stopped tracking. Generated ${trackPoints.value.length} track points`)
-      }
-      
-      trackPoints.value = []
+      console.log('Stopped location tracking')
     }
+
+    const locateUser = async () => {
+      try {
+        isLocating.value = true
+        await checkLocationPermissions()
+        
+        if (mapInstance.value) {
+          mapInstance.value.locate({
+            setView: true,
+            maxZoom: 16,
+            enableHighAccuracy: true
+          })
+        }
+      } catch (error) {
+        console.error('Failed to get location:', error)
+        alert(`GPS Error: ${error.message}`)
+      } finally {
+        // Reset locating state after a short delay
+        setTimeout(() => {
+          isLocating.value = false
+        }, 2000)
+      }
+    }
+
 
     const handleGPSClick = () => {
-      if (isTracking.value) {
-        stopTracking()
-      } else {
-        startTracking()
+      // Always start continuous tracking - no toggle
+      if (!isTracking.value) {
+        startLocationTracking()
       }
     }
 
-    const locateUser = () => {
-      if (mapInstance.value) {
-        mapInstance.value.locate({
-          setView: true,
-          maxZoom: 16,
-          enableHighAccuracy: true
-        })
-      }
-    }
 
     const toggleLayer = (layerName, visible) => {
       const layer = layers.value.get(layerName)
@@ -578,6 +676,23 @@ export default {
       }
     }
 
+    // Photo marker management functions
+    const updatePhotoMarkers = () => {
+      if (!photoMarkersComposable.value) return
+
+      // Clear existing markers
+      photoMarkersComposable.value.clearAllPhotoMarkers()
+      photoMarkersComposable.value.clearPhotoData()
+
+      // Add markers for all session photos with location
+      sessionPhotos.value.forEach(photo => {
+        if (photo.location) {
+          photoMarkersComposable.value.addPhotoMarker(photo)
+          photoMarkersComposable.value.setPhotoData(photo.id, photo)
+        }
+      })
+    }
+
     onMounted(() => {
       initializeMap()
       
@@ -590,10 +705,8 @@ export default {
     })
 
     onUnmounted(() => {
-      // Stop GPS tracking if active
-      if (isTracking.value) {
-        stopTracking()
-      }
+      // Don't stop location tracking - keep it running even when component unmounts
+      // This allows location tracking to persist across navigation and app state changes
       
       // Remove touch event listeners
       if (mapContainer.value) {
@@ -612,6 +725,11 @@ export default {
       loadGeoJSONLayers()
     }, { deep: true })
 
+    // Watch for changes in session photos to update markers
+    watch(sessionPhotos, () => {
+      updatePhotoMarkers()
+    }, { deep: true, immediate: true })
+
     // Expose methods for external access
     if (props.mapRef) {
       props.mapRef.locateUser = locateUser
@@ -622,8 +740,11 @@ export default {
       mapContainer,
       loading,
       error,
+      isLocating,
       isTracking,
       locateUser,
+      startLocationTracking,
+      stopLocationTracking,
       handleGPSClick,
       handleTouchStart,
       handleTouchEnd,
@@ -648,7 +769,7 @@ export default {
 .leaflet-map {
   height: 100%;
   width: 100%;
-  background: #1394b9;
+  background: #1294b9;
 }
 
 .gps-fab {
@@ -658,7 +779,7 @@ export default {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #1394b9, #26a6c4);
+  background: linear-gradient(135deg, #1294b9, #26a6c4);
   border: none;
   color: #fcfcfc;
   font-size: 1.5rem;
@@ -671,21 +792,47 @@ export default {
   transition: all 0.3s ease;
 }
 
-.gps-fab.tracking {
-  background: linear-gradient(135deg, #ff6b35, #ff8c69);
-  box-shadow: 0 4px 20px rgba(255, 107, 53, 0.4);
+.gps-fab.locating {
+  background: linear-gradient(135deg, #1294b9, #26a6c4);
+  box-shadow: 0 4px 20px rgba(19, 148, 185, 0.6);
   animation: pulse 1.5s infinite;
+}
+
+.gps-fab.tracking {
+  background: linear-gradient(135deg, #27ae60, #2ecc71);
+  box-shadow: 0 4px 20px rgba(46, 204, 113, 0.6);
+  animation: tracking-pulse 2s infinite;
+}
+
+.gps-fab.disabled {
+  pointer-events: none;
+  opacity: 0.8;
 }
 
 @keyframes pulse {
   0% {
-    box-shadow: 0 4px 20px rgba(255, 107, 53, 0.4);
+    box-shadow: 0 4px 20px rgba(19, 148, 185, 0.4);
   }
   50% {
-    box-shadow: 0 4px 25px rgba(255, 107, 53, 0.8);
+    box-shadow: 0 4px 25px rgba(19, 148, 185, 0.8);
   }
   100% {
-    box-shadow: 0 4px 20px rgba(255, 107, 53, 0.4);
+    box-shadow: 0 4px 20px rgba(19, 148, 185, 0.4);
+  }
+}
+
+@keyframes tracking-pulse {
+  0% {
+    box-shadow: 0 4px 20px rgba(46, 204, 113, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 4px 25px rgba(46, 204, 113, 0.8);
+    transform: scale(1.05);
+  }
+  100% {
+    box-shadow: 0 4px 20px rgba(46, 204, 113, 0.4);
+    transform: scale(1);
   }
 }
 
@@ -695,7 +842,7 @@ export default {
   left: 50%;
   transform: translateX(-50%);
   background: rgba(0, 0, 0, 0.8);
-  color: #1394b9;
+  color: #1294b9;
   padding: 8px 16px;
   border-radius: 20px;
   font-size: 0.9rem;
@@ -717,44 +864,145 @@ export default {
 </style>
 
 <style>
-.leaflet-popup-content-wrapper {
+/* Popup container styling with viewport containment */
+.custom-popup .leaflet-popup-content-wrapper {
   border-radius: 12px !important;
   border: none !important;
   background: #fcfcfc !important;
+  width: 280px !important;
+  max-height: 400px !important;
+  box-shadow: 0 8px 32px rgba(19, 148, 185, 0.15) !important;
+  overflow: hidden !important;
 }
 
-.leaflet-popup-tip {
+.custom-popup .leaflet-popup-tip {
   background: #fcfcfc !important;
 }
 
+/* Ensure popup stays within viewport bounds */
+.custom-popup .leaflet-popup {
+  margin-bottom: 20px !important;
+}
 
 .popup-card {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  padding: 8px;
-  max-width: 250px;
+  padding: 12px;
+  width: 100%;
+  height: 100%;
+  max-height: 400px;
   background: #fcfcfc;
   border-radius: 8px;
-  color: #1394b9;
+  color: #1294b9;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 
 .popup-card h3 {
-  margin: 0 0 12px 0;
-  padding-bottom: 8px;
-  border-bottom: 2px solid #1394b9;
-  color: #1394b9;
+  margin: 0 0 8px 0;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #1294b9;
+  color: #1294b9;
   font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.popup-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 320px;
+  padding-right: 4px;
+  /* Smooth scrolling for touch devices */
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for webkit browsers */
+.popup-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.popup-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.popup-content::-webkit-scrollbar-thumb {
+  background: rgba(19, 148, 185, 0.3);
+  border-radius: 2px;
+}
+
+.popup-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(19, 148, 185, 0.5);
 }
 
 .popup-attribute {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  padding: 2px 0;
+  font-size: 13px;
+  line-height: 1.3;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.popup-attribute:last-child {
+  margin-bottom: 0;
 }
 
 .popup-attribute .key {
-  color: #94a3b8;
+  color: #64748b;
   font-weight: 500;
+  display: inline-block;
+  margin-right: 4px;
 }
 
 .popup-attribute .value {
-  color: #1394b9;
+  color: #1294b9;
+  font-weight: 400;
+}
+
+/* Ensure popup positioning stays within viewport */
+@media screen and (max-width: 360px) {
+  .custom-popup .leaflet-popup-content-wrapper {
+    width: calc(100vw - 40px) !important;
+    max-width: 320px !important;
+  }
+}
+
+@media screen and (max-height: 600px) {
+  .custom-popup .leaflet-popup-content-wrapper {
+    max-height: 300px !important;
+  }
+  
+  .popup-content {
+    max-height: 220px;
+  }
+}
+
+/* Special styling for location popup */
+.location-popup .leaflet-popup-content-wrapper {
+  max-height: 200px !important;
+}
+
+.location-popup .popup-content {
+  max-height: 120px;
+}
+
+/* Enhanced close button styling */
+.custom-popup .leaflet-popup-close-button {
+  color: #64748b !important;
+  font-size: 18px !important;
+  font-weight: bold !important;
+  padding: 4px 8px !important;
+  margin: 0 !important;
+  background: none !important;
+  border: none !important;
+}
+
+.custom-popup .leaflet-popup-close-button:hover {
+  color: #1294b9 !important;
+  background: rgba(19, 148, 185, 0.1) !important;
+  border-radius: 4px !important;
 }
 </style>

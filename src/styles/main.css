@@ -6,7 +6,7 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #1394b9;
+  background: #1294b9 !important;
   color: #fcfcfc;
   overflow: hidden;
   -webkit-touch-callout: none;
@@ -21,15 +21,16 @@ body {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  background: #1294b9 !important;
 }
 
 .flutter-inspired {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px rgba(18, 148, 185, 0.15);
   border-radius: 8px;
 }
 
 .btn-primary {
-  background: #1394b9;
+  background: #1294b9;
   color: #fcfcfc;
   border: none;
   padding: 12px 24px;
@@ -42,7 +43,7 @@ body {
 .btn-primary:hover {
   background: #26a6c4;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(19, 148, 185, 0.3);
+  box-shadow: 0 4px 12px rgba(18, 148, 185, 0.3);
 }
 
 .btn-primary:active {
@@ -54,9 +55,9 @@ body {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: #1394b9;
+  background: #1294b9;
   border: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(18, 148, 185, 0.3);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -69,7 +70,7 @@ body {
 
 .fab:hover {
   transform: scale(1.1);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 6px 16px rgba(18, 148, 185, 0.4);
 }
 
 .fab:active {
@@ -81,7 +82,7 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(19, 148, 185, 0.95);
+  background: rgba(18, 148, 185, 0.95);
   backdrop-filter: blur(10px);
   border-top: 1px solid rgba(252, 252, 252, 0.2);
   padding: 8px 0;
@@ -114,7 +115,7 @@ body {
   right: -320px;
   width: 320px;
   height: 100vh;
-  background: rgba(19, 148, 185, 0.95);
+  background: rgba(18, 148, 185, 0.95);
   backdrop-filter: blur(10px);
   border-left: 1px solid rgba(252, 252, 252, 0.2);
   transition: right 0.3s ease;
@@ -132,7 +133,7 @@ body {
   align-items: center;
   justify-content: center;
   height: 100vh;
-  background: #1394b9;
+  background: #1294b9;
   color: #fcfcfc;
   padding: 2rem;
   text-align: center;
@@ -147,14 +148,14 @@ body {
 .leaflet-container {
   height: 100%;
   width: 100%;
-  background: #1394b9;
+  background: #1294b9;
 }
 
 .leaflet-popup-content-wrapper {
   background: #fcfcfc;
-  color: #1394b9;
+  color: #1294b9;
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(18, 148, 185, 0.3);
 }
 
 .leaflet-popup-content {
@@ -172,7 +173,7 @@ body {
 }
 
 .popup-card h3 {
-  color: #1394b9;
+  color: #1294b9;
   margin-bottom: 12px;
   font-size: 16px;
   font-weight: 600;
@@ -190,12 +191,12 @@ body {
 }
 
 .popup-card .attribute .key {
-  color: #1394b9;
+  color: #1294b9;
   font-weight: 500;
 }
 
 .popup-card .attribute .value {
-  color: #1394b9;
+  color: #1294b9;
 }
 
 .loading-screen {
@@ -204,7 +205,7 @@ body {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: linear-gradient(135deg, #1394b9 0%, #26a6c4 100%);
+  background: #1294b9;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -230,10 +231,7 @@ body {
 .loading-text h1 {
   font-size: 2.5rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #fcfcfc, #e0f3f8);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #fcfcfc;
   margin-bottom: 0.5rem;
 }
 
@@ -257,5 +255,232 @@ body {
   .loading-container {
     gap: 1.5rem;
     padding: 1.5rem;
+  }
+}
+
+/* Comprehensive background override for all screen sizes */
+html,
+body,
+#app,
+.app-container,
+.login-container,
+.device-restriction,
+.loading-screen {
+  background: #1294b9 !important;
+  background-color: #1294b9 !important;
+  background-image: none !important;
+}
+
+/* Mobile-specific overrides to prevent any framework/browser defaults */
+@media (max-width: 1024px) {
+  html,
+  body,
+  #app,
+  .app-container,
+  .login-container,
+  .device-restriction,
+  .loading-screen {
+    background: #1294b9 !important;
+    background-color: #1294b9 !important;
+    background-image: none !important;
+  }
+}
+
+/* Additional mobile overrides for smaller screens */
+@media (max-width: 768px) {
+  html,
+  body,
+  #app,
+  .app-container,
+  .login-container,
+  .device-restriction,
+  .loading-screen {
+    background: #1294b9 !important;
+    background-color: #1294b9 !important;
+    background-image: none !important;
+  }
+}
+
+/* Photo Marker Styles */
+.custom-photo-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.photo-marker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+}
+
+.photo-marker-inner {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  background: #1294b9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-marker-inner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.photo-marker-pin {
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 12px solid #ffffff;
+  margin-top: -2px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.photo-marker:hover .photo-marker-inner {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* Photo Popup Styles */
+.photo-marker-popup .leaflet-popup-content-wrapper {
+  border-radius: 12px !important;
+  border: none !important;
+  background: #fcfcfc !important;
+  width: 300px !important;
+  max-height: 500px !important;
+  box-shadow: 0 8px 32px rgba(19, 148, 185, 0.15) !important;
+  overflow: hidden !important;
+}
+
+.photo-marker-popup .leaflet-popup-tip {
+  background: #fcfcfc !important;
+}
+
+.photo-popup {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 0;
+  width: 100%;
+  color: #1294b9;
+}
+
+.photo-popup-header {
+  padding: 12px 16px;
+  border-bottom: 2px solid #1294b9;
+  background: #f8feff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.photo-popup-header h3 {
+  margin: 0;
+  color: #1294b9;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.photo-timestamp {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 400;
+}
+
+.photo-popup-content {
+  padding: 16px;
+}
+
+.popup-photo-full {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.photo-location-info {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.location-coords,
+.location-accuracy {
+  background: #f0f9ff;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #b0d9e3;
+}
+
+.location-coords strong,
+.location-accuracy strong {
+  color: #1294b9;
+  font-weight: 600;
+}
+
+.photo-popup-actions {
+  padding: 12px 16px;
+  background: #f8feff;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: center;
+}
+
+.download-photo-btn {
+  background: #1294b9;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.download-photo-btn:hover {
+  background: #26a6c4;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(19, 148, 185, 0.3);
+}
+
+.download-photo-btn:active {
+  transform: translateY(0);
+}
+
+/* Mobile responsiveness for photo popups */
+@media (max-width: 360px) {
+  .photo-marker-popup .leaflet-popup-content-wrapper {
+    width: calc(100vw - 40px) !important;
+    max-width: 280px !important;
+  }
+  
+  .photo-location-info {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+@media (max-height: 600px) {
+  .photo-marker-popup .leaflet-popup-content-wrapper {
+    max-height: 400px !important;
+  }
+  
+  .popup-photo-full {
+    max-height: 150px;
   }
 }

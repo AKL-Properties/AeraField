@@ -1,11 +1,11 @@
-const CACHE_NAME = 'aerafield-v2'
-const DATA_CACHE_NAME = 'aerafield-data-v2'
-const TILE_CACHE_NAME = 'aerafield-tiles-v2'
+const CACHE_NAME = 'aerafield-v4'
+const DATA_CACHE_NAME = 'aerafield-data-v4'
+const TILE_CACHE_NAME = 'aerafield-tiles-v4'
 
 // Cache configuration
 const TILE_CACHE_SIZE_LIMIT = 50 * 1024 * 1024 // 50MB for tiles
 const TILE_CACHE_MAX_ENTRIES = 2000
-const CACHE_EXPIRY_DAYS = 7
+// No expiration - tiles are cached permanently for offline use
 
 // Static assets to cache
 const STATIC_ASSETS = [
@@ -42,25 +42,13 @@ async function manageTileCache() {
     const cache = await caches.open(TILE_CACHE_NAME)
     const requests = await cache.keys()
     
-    // Check cache size and entries
+    // Only manage by entry count, no expiration
     if (requests.length > TILE_CACHE_MAX_ENTRIES) {
-      console.log('[ServiceWorker] Cache exceeded max entries, cleaning up')
+      console.log('[ServiceWorker] Cache exceeded max entries, cleaning up oldest 20%')
       
-      // Sort by last accessed (we'll use a simple approach and remove oldest 20%)
+      // Remove oldest 20% based on cache order (first in, first out)
       const toDelete = requests.slice(0, Math.floor(requests.length * 0.2))
       await Promise.all(toDelete.map(request => cache.delete(request)))
-    }
-    
-    // Clean expired entries
-    const expiryTime = Date.now() - (CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
-    for (const request of requests) {
-      const response = await cache.match(request)
-      if (response) {
-        const cachedTime = response.headers.get('sw-cached-time')
-        if (cachedTime && parseInt(cachedTime) < expiryTime) {
-          await cache.delete(request)
-        }
-      }
     }
   } catch (error) {
     console.error('[ServiceWorker] Cache management error:', error)
@@ -71,19 +59,10 @@ async function addTileToCache(request, response) {
   try {
     const cache = await caches.open(TILE_CACHE_NAME)
     
-    // Add timestamp header for expiry management
-    const responseWithTimestamp = new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: {
-        ...Object.fromEntries(response.headers.entries()),
-        'sw-cached-time': Date.now().toString()
-      }
-    })
+    // Cache the response without timestamp (no expiration needed)
+    await cache.put(request, response)
     
-    await cache.put(request, responseWithTimestamp)
-    
-    // Periodically manage cache (every 50th tile)
+    // Periodically manage cache by size only (every 50th tile)
     if (Math.random() < 0.02) {
       manageTileCache()
     }
@@ -146,67 +125,47 @@ self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
 
-  // Handle tile requests (map tiles) - offline-first with lazy caching
+  // Handle tile requests (map tiles) - cache-first for offline reliability
   if (isTileRequest(request.url)) {
     event.respondWith(
       caches.open(TILE_CACHE_NAME).then(async (cache) => {
+        // First check cache for immediate response
+        const cachedResponse = await cache.match(request)
+        
         try {
-          // Try cache first for immediate response
-          const cachedResponse = await cache.match(request)
+          // Try network for fresh tiles (with timeout for offline detection)
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
           
-          if (cachedResponse) {
-            // Check if cache is still valid
-            const cachedTime = cachedResponse.headers.get('sw-cached-time')
-            const expiryTime = Date.now() - (CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
-            
-            if (cachedTime && parseInt(cachedTime) > expiryTime) {
-              console.log('[ServiceWorker] Serving cached tile:', request.url)
-              return cachedResponse
-            }
-          }
-
-          // Fetch from network
-          console.log('[ServiceWorker] Fetching tile from network:', request.url)
-          const networkResponse = await fetch(request)
+          const networkResponse = await fetch(request, {
+            mode: 'cors',
+            cache: 'default',
+            signal: controller.signal
+          })
+          
+          clearTimeout(timeoutId)
           
           if (networkResponse.ok && networkResponse.status === 200) {
-            // Cache the successful response for offline use
+            // Cache the successful response for future offline use
             addTileToCache(request, networkResponse.clone())
             return networkResponse
+          } else if (cachedResponse) {
+            // Network failed but we have cache
+            console.log('[ServiceWorker] Network failed, serving cached tile:', request.url)
+            return cachedResponse
           } else {
-            // Network failed, return cached version if available
-            if (cachedResponse) {
-              console.log('[ServiceWorker] Network failed, serving expired cache:', request.url)
-              return cachedResponse
-            }
-            throw new Error(`Tile fetch failed: ${networkResponse.status}`)
+            throw new Error(`Network response failed: ${networkResponse.status}`)
           }
-        } catch (error) {
-          console.log('[ServiceWorker] Tile fetch error, checking cache:', error.message)
-          
-          // Network is down, try to serve from cache regardless of expiry
-          const cachedResponse = await cache.match(request)
+        } catch (networkError) {
+          // Network failed or timed out
           if (cachedResponse) {
-            console.log('[ServiceWorker] Serving cached tile (offline):', request.url)
+            console.log('[ServiceWorker] Network unavailable, serving cached tile:', request.url)
             return cachedResponse
           }
           
-          // Return transparent tile as fallback
-          console.log('[ServiceWorker] No cached tile available, returning transparent fallback')
-          return new Response(
-            // 1x1 transparent PNG
-            new Uint8Array([
-              137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 11, 73, 68, 65, 84, 120, 156, 99, 248, 15, 0, 1, 0, 1, 0, 24, 221, 141, 219, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130
-            ]),
-            {
-              status: 200,
-              statusText: 'OK',
-              headers: {
-                'Content-Type': 'image/png',
-                'Cache-Control': 'no-cache'
-              }
-            }
-          )
+          // No cache available, let request fail
+          console.log('[ServiceWorker] No cached tile available, letting request fail')
+          throw networkError
         }
       })
     )

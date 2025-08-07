@@ -97,7 +97,7 @@ export default {
 <style scoped>
 .app-container {
   height: 100vh;
-  background: #1394b9;
+  background: #1294b9 !important;
 }
 
 .loading-screen {
@@ -105,7 +105,7 @@ export default {
   align-items: center;
   justify-content: center;
   height: 100vh;
-  background: #1394b9;
+  background: #1294b9;
   color: #fcfcfc;
 }
 

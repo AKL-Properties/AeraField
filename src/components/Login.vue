@@ -3,10 +3,10 @@
     <div class="login-card">
       <div class="header">
         <div class="logo-circle">
-          🗺️
+          <img src="/logo.png" alt="AeraField Logo" style="width:40px; height:20px;" />
         </div>
-        <h1 class="title">AeraField</h1>
-        <p class="subtitle">Field Navigation Portal</p>
+        <h1 class="title">AéraField</h1>
+        <p class="subtitle">Field Navigation Map</p>
       </div>
 
       <form @submit.prevent="handleSubmit" class="login-form">
@@ -109,7 +109,7 @@ export default {
   justify-content: center;
   height: 100vh;
   width: 100vw;
-  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+  background: #1294b9 !important;
   padding: 1rem;
 }
 
@@ -117,11 +117,10 @@ export default {
   width: 100%;
   max-width: 400px;
   padding: 2rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: #1294b9 !important;
   border-radius: 20px;
-  backdrop-filter: blur(15px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 20px 40px rgba(18, 148, 185, 0.3);
 }
 
 .header {
@@ -133,7 +132,8 @@ export default {
   width: 60px;
   height: 60px;
   margin: 0 auto 1rem;
-  background: linear-gradient(135deg, #00bcd4, #26a69a);
+  background: transparent;
+  border: 2px solid #fcfcfc;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -145,15 +145,12 @@ export default {
 .title {
   font-size: 1.8rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #00bcd4, #26a69a);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #fcfcfc;
   margin: 0 0 0.5rem 0;
 }
 
 .subtitle {
-  color: #b0b0b0;
+  color: #fcfcfc;
   font-size: 0.9rem;
   margin: 0;
   font-weight: 400;
@@ -171,24 +168,24 @@ export default {
   width: 100%;
   padding: 1rem;
   font-size: 1rem;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(18, 148, 185, 0.3);
   border-radius: 12px;
-  color: #ffffff;
+  color: #1294b9;
   outline: none;
   transition: all 0.3s ease;
   box-sizing: border-box;
 }
 
 .form-input::placeholder {
-  color: #888888;
+  color: #999999;
 }
 
 .form-input.focused,
 .form-input:focus {
   border-color: #00bcd4;
   box-shadow: 0 0 0 3px rgba(0, 188, 212, 0.2);
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .error-message {
@@ -237,8 +234,8 @@ export default {
   text-align: center;
   margin-top: 1.5rem;
   padding: 1rem 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  color: #888888;
+  border-top: 1px solid rgba(18, 148, 185, 0.2);
+  color: #fcfcfc;
   font-size: 0.85rem;
 }
 </style>
