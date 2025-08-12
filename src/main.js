@@ -1,13 +1,12 @@
 import { createApp, h } from 'vue'
-import 'leaflet/dist/leaflet.css'
 import App from './App.vue'
 import './styles/main.css'
 
 import { library } from '@fortawesome/fontawesome-svg-core'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
-import { faLocationCrosshairs } from '@fortawesome/free-solid-svg-icons'
+import { faLocationDot, faPalette, faTimes, faHome } from '@fortawesome/free-solid-svg-icons'
 
-library.add(faLocationCrosshairs)
+library.add(faLocationDot, faPalette, faTimes, faHome)
 
 const app = createApp({
   render: () => h(App)

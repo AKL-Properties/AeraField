@@ -7,17 +7,65 @@
       </div>
     </div>
 
-    <div class="camera-controls">
+    <!-- Camera Preview and Controls -->
+    <div class="camera-container" v-if="showCamera">
+      <div class="camera-preview">
+        <video 
+          ref="videoElement"
+          autoplay 
+          playsinline 
+          muted
+          class="video-preview"
+        ></video>
+        <canvas 
+          ref="canvasElement"
+          class="capture-canvas"
+          style="display: none;"
+        ></canvas>
+      </div>
+
+      <div class="camera-actions">
+        <button 
+          @click="switchCamera" 
+          :disabled="!canSwitchCamera"
+          class="switch-camera-btn"
+        >
+          <font-awesome-icon :icon="faSync" />
+          {{ currentFacingMode === 'environment' ? 'Front' : 'Back' }}
+        </button>
+
+        <button 
+          @click="capturePhoto" 
+          :disabled="isCapturing"
+          class="capture-btn-large"
+        >
+          <div class="capture-circle">
+            <font-awesome-icon 
+              :icon="faCamera" 
+              :class="{ 'capturing': isCapturing }"
+            />
+          </div>
+        </button>
+
+        <button 
+          @click="closeCameraView"
+          class="close-camera-btn"
+        >
+          <font-awesome-icon :icon="faTimes" />
+          Close
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Controls (when camera is closed) -->
+    <div class="main-controls" v-if="!showCamera">
       <button 
-        @click="capturePhoto" 
+        @click="openCameraView" 
         :disabled="isCapturing"
-        class="capture-btn"
+        class="open-camera-btn"
       >
-        <font-awesome-icon 
-          :icon="faCamera" 
-          :class="{ 'capturing': isCapturing }"
-        />
-        {{ isCapturing ? 'Capturing...' : 'Take Photo' }}
+        <font-awesome-icon :icon="faCamera" />
+        Open Camera
       </button>
 
       <button 
@@ -48,7 +96,8 @@
       </button>
     </div>
 
-    <div class="photos-grid" v-if="sessionPhotos.length > 0">
+    <!-- Photos Grid -->
+    <div class="photos-grid" v-if="sessionPhotos.length > 0 && !showCamera">
       <div 
         v-for="(photo, index) in sessionPhotos" 
         :key="photo.id"
@@ -67,27 +116,19 @@
       </div>
     </div>
 
-    <div class="empty-state" v-else>
+    <!-- Empty State -->
+    <div class="empty-state" v-if="sessionPhotos.length === 0 && !showCamera">
       <font-awesome-icon :icon="faCamera" class="empty-icon" />
       <p>No photos captured yet</p>
-      <p class="empty-subtitle">Tap "Take Photo" to start capturing geotagged images</p>
+      <p class="empty-subtitle">Tap "Open Camera" to start capturing geotagged images</p>
     </div>
-
-    <input 
-      ref="fileInput"
-      type="file" 
-      accept="image/*" 
-      capture="environment"
-      @change="handleFileSelect"
-      style="display: none;"
-    >
   </div>
 </template>
 
 <script>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
-import { faCamera, faDownload, faTrash } from '@fortawesome/free-solid-svg-icons'
+import { faCamera, faDownload, faTrash, faSync, faTimes } from '@fortawesome/free-solid-svg-icons'
 import piexif from 'piexifjs'
 import JSZip from 'jszip'
 import { useSessionPhotos } from '../composables/useSessionPhotos'
@@ -98,8 +139,13 @@ export default {
     FontAwesomeIcon
   },
   setup() {
-    const fileInput = ref(null)
+    const videoElement = ref(null)
+    const canvasElement = ref(null)
     const isCapturing = ref(false)
+    const showCamera = ref(false)
+    const currentStream = ref(null)
+    const currentFacingMode = ref('environment') // 'environment' = back, 'user' = front
+    const canSwitchCamera = ref(false)
     const capturedPhotos = reactive([])
     
     // Session photo management
@@ -117,40 +163,187 @@ export default {
       startSession()
     }
 
-    // Computed property to show combined photos
-    const allPhotos = computed(() => {
-      return [...capturedPhotos, ...sessionPhotos.value]
-    })
+    // Check if device has multiple cameras
+    const checkCameraCapabilities = async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const videoDevices = devices.filter(device => device.kind === 'videoinput')
+        canSwitchCamera.value = videoDevices.length > 1
+      } catch (error) {
+        console.error('Error checking camera capabilities:', error)
+        canSwitchCamera.value = false
+      }
+    }
 
+    // Start camera stream
+    const startCameraStream = async (facingMode = 'environment') => {
+      try {
+        // Stop existing stream if any
+        if (currentStream.value) {
+          currentStream.value.getTracks().forEach(track => track.stop())
+        }
+
+        const constraints = {
+          video: {
+            facingMode: { ideal: facingMode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints)
+        currentStream.value = stream
+        
+        if (videoElement.value) {
+          videoElement.value.srcObject = stream
+          await videoElement.value.play()
+        }
+
+        currentFacingMode.value = facingMode
+        return true
+      } catch (error) {
+        console.error('Error starting camera stream:', error)
+        throw error
+      }
+    }
+
+    // Stop camera stream
+    const stopCameraStream = () => {
+      if (currentStream.value) {
+        currentStream.value.getTracks().forEach(track => track.stop())
+        currentStream.value = null
+      }
+      if (videoElement.value) {
+        videoElement.value.srcObject = null
+      }
+    }
+
+    // Open camera view
+    const openCameraView = async () => {
+      try {
+        showCamera.value = true
+        await checkCameraCapabilities()
+        await startCameraStream(currentFacingMode.value)
+      } catch (error) {
+        console.error('Error opening camera:', error)
+        alert('Unable to access camera. Please check permissions and try again.')
+        showCamera.value = false
+      }
+    }
+
+    // Close camera view
+    const closeCameraView = () => {
+      stopCameraStream()
+      showCamera.value = false
+    }
+
+    // Switch between front and back camera
+    const switchCamera = async () => {
+      if (!canSwitchCamera.value) return
+      
+      const newFacingMode = currentFacingMode.value === 'environment' ? 'user' : 'environment'
+      
+      try {
+        await startCameraStream(newFacingMode)
+      } catch (error) {
+        console.error('Error switching camera:', error)
+        alert('Unable to switch camera. Using current camera.')
+      }
+    }
+
+    // Capture photo from video stream
     const capturePhoto = async () => {
+      if (!videoElement.value || !canvasElement.value) return
+      
       try {
         isCapturing.value = true
         
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          await requestCameraPermission()
+        const video = videoElement.value
+        const canvas = canvasElement.value
+        const ctx = canvas.getContext('2d')
+        
+        // Set canvas dimensions to match video
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        
+        // Draw current video frame to canvas
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        
+        // Convert canvas to blob
+        const blob = await new Promise(resolve => {
+          canvas.toBlob(resolve, 'image/jpeg', 0.9)
+        })
+        
+        // Convert blob to data URL
+        const reader = new FileReader()
+        reader.onload = async (e) => {
+          try {
+            let imageData = e.target.result
+            const location = await getCurrentLocation()
+            
+            if (location) {
+              imageData = await addGPSExifData(imageData, location)
+            }
+
+            const photo = {
+              id: Date.now() + Math.random(),
+              data: imageData,
+              thumbnail: await createThumbnail(imageData),
+              filename: `photo_${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`,
+              timestamp: new Date(),
+              location: location,
+              originalSize: blob.size
+            }
+
+            // Add to both local array and session storage
+            capturedPhotos.push(photo)
+            addPhotoToSession(photo)
+            
+            // Flash effect for feedback
+            flashEffect()
+            
+          } catch (error) {
+            console.error('Error processing photo:', error)
+            alert('Error processing photo. Photo may be saved without GPS data.')
+          } finally {
+            isCapturing.value = false
+          }
         }
         
-        fileInput.value.click()
+        reader.readAsDataURL(blob)
+        
       } catch (error) {
-        console.error('Error accessing camera:', error)
-        alert('Unable to access camera. Please check permissions.')
-      } finally {
+        console.error('Error capturing photo:', error)
+        alert('Error capturing photo. Please try again.')
         isCapturing.value = false
       }
     }
 
-    const requestCameraPermission = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'environment' } 
-        })
-        stream.getTracks().forEach(track => track.stop())
-        return true
-      } catch (error) {
-        console.error('Camera permission denied:', error)
-        throw error
-      }
+    // Flash effect for photo capture feedback
+    const flashEffect = () => {
+      const flash = document.createElement('div')
+      flash.style.position = 'fixed'
+      flash.style.top = '0'
+      flash.style.left = '0'
+      flash.style.width = '100vw'
+      flash.style.height = '100vh'
+      flash.style.backgroundColor = 'white'
+      flash.style.opacity = '0.8'
+      flash.style.zIndex = '9999'
+      flash.style.pointerEvents = 'none'
+      
+      document.body.appendChild(flash)
+      
+      setTimeout(() => {
+        document.body.removeChild(flash)
+      }, 150)
     }
+
+    // Cleanup on unmount
+    onUnmounted(() => {
+      stopCameraStream()
+    })
 
     const getCurrentLocation = () => {
       return new Promise((resolve, reject) => {
@@ -238,55 +431,6 @@ export default {
       })
     }
 
-    const handleFileSelect = async (event) => {
-      const file = event.target.files[0]
-      if (!file) return
-
-      try {
-        isCapturing.value = true
-        
-        const location = await getCurrentLocation()
-        
-        const reader = new FileReader()
-        reader.onload = async (e) => {
-          try {
-            let imageData = e.target.result
-            
-            if (location) {
-              imageData = await addGPSExifData(imageData, location)
-            }
-
-            const photo = {
-              id: Date.now() + Math.random(),
-              data: imageData,
-              thumbnail: await createThumbnail(imageData),
-              filename: `photo_${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`,
-              timestamp: new Date(),
-              location: location,
-              originalSize: file.size
-            }
-
-            // Add to both local array and session storage
-            capturedPhotos.push(photo)
-            addPhotoToSession(photo)
-            
-          } catch (error) {
-            console.error('Error processing photo:', error)
-            alert('Error processing photo. Photo saved without GPS data.')
-          } finally {
-            isCapturing.value = false
-            event.target.value = ''
-          }
-        }
-        
-        reader.readAsDataURL(file)
-        
-      } catch (error) {
-        console.error('Error handling file:', error)
-        isCapturing.value = false
-        event.target.value = ''
-      }
-    }
 
     const addGPSExifData = async (imageDataURL, location) => {
       try {
@@ -415,12 +559,18 @@ export default {
     }
 
     return {
-      fileInput,
+      videoElement,
+      canvasElement,
       isCapturing,
+      showCamera,
+      currentFacingMode,
+      canSwitchCamera,
       capturedPhotos,
       sessionPhotos,
+      openCameraView,
+      closeCameraView,
+      switchCamera,
       capturePhoto,
-      handleFileSelect,
       downloadSinglePhoto,
       exportPhotos,
       exportPhotosAsKMZFile,
@@ -428,7 +578,9 @@ export default {
       formatTimestamp,
       faCamera,
       faDownload,
-      faTrash
+      faTrash,
+      faSync,
+      faTimes
     }
   }
 }
@@ -463,14 +615,132 @@ export default {
   font-size: 0.9rem;
 }
 
-.camera-controls {
+/* Camera Container */
+.camera-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+}
+
+.camera-preview {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.capture-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* Camera Actions */
+.camera-actions {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, transparent 100%);
+  padding: 2rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.switch-camera-btn, .close-camera-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.switch-camera-btn:hover, .close-camera-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
+}
+
+.switch-camera-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.capture-btn-large {
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-radius: 50%;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.capture-btn-large:hover {
+  background: rgba(255, 255, 255, 1);
+  transform: scale(1.1);
+}
+
+.capture-btn-large:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: scale(1);
+}
+
+.capture-circle {
+  width: 60px;
+  height: 60px;
+  background: #00bcd4;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 1.2rem;
+}
+
+.capture-circle .capturing {
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+/* Main Controls */
+.main-controls {
   display: flex;
   flex-direction: column;
   gap: 1rem;
   margin-bottom: 2rem;
 }
 
-.capture-btn, .export-btn, .export-kmz-btn, .clear-btn {
+.open-camera-btn, .export-btn, .export-kmz-btn, .clear-btn {
   padding: 1rem;
   border: none;
   border-radius: 12px;
@@ -485,30 +755,21 @@ export default {
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
-.capture-btn {
+.open-camera-btn {
   background: #00bcd4;
   color: white;
   transform: scale(1);
 }
 
-.capture-btn:hover {
+.open-camera-btn:hover {
   background: #00acc1;
   transform: scale(1.02);
 }
 
-.capture-btn:disabled {
+.open-camera-btn:disabled {
   background: #666;
   cursor: not-allowed;
   transform: scale(1);
-}
-
-.capture-btn .capturing {
-  animation: pulse 1s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
 }
 
 .export-btn {

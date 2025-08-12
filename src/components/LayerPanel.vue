@@ -19,7 +19,7 @@
         @click="$refs.fileInput.click()"
         class="add-layer-button"
       >
-        📍 Add KMZ Layer
+      Add KMZ Layer
       </button>
     </div>
 
@@ -50,25 +50,50 @@
           </p>
         </div>
 
-        <button
-          @click="toggleLayer(name)"
-          @touchstart="handleToggleTouch"
-          @touchend="handleToggleTouchEnd"
-          :class="['toggle-button', { active: layerVisibility[name] }]"
-        >
-          {{ layerVisibility[name] ? 'ON' : 'OFF' }}
-        </button>
+        <div class="layer-controls">
+          <button
+            @click="openStyleEditor(name, filename, type)"
+            @touchstart="handleToggleTouch"
+            @touchend="handleToggleTouchEnd"
+            class="style-button"
+            title="Style Layer"
+          >
+            <font-awesome-icon :icon="'palette'" />
+          </button>
+          
+          <button
+            @click="toggleLayer(name)"
+            @touchstart="handleToggleTouch"
+            @touchend="handleToggleTouchEnd"
+            :class="['toggle-button', { active: layerVisibility[name] }]"
+          >
+            {{ layerVisibility[name] ? 'ON' : 'OFF' }}
+          </button>
+        </div>
       </div>
     </div>
   </div>
+
+  <!-- Style Editor Modal -->
+  <StyleEditor
+    :is-open="styleEditorOpen"
+    :layer-name="selectedLayerName"
+    :layer-data="selectedLayerData"
+    @close="closeStyleEditor"
+    @apply-style="applyLayerStyle"
+  />
 </template>
 
 <script>
 import { ref, watch, inject } from 'vue'
 import { useGeoJSONLoader } from '../composables/useGeoJSONLoader'
+import StyleEditor from './StyleEditor.vue'
 
 export default {
   name: 'LayerPanel',
+  components: {
+    StyleEditor
+  },
   props: {
     mapRef: Object
   },
@@ -77,6 +102,11 @@ export default {
     const layerVisibility = ref({})
     
     const mapInstance = inject('mapInstance', null)
+
+    // Style editor state
+    const styleEditorOpen = ref(false)
+    const selectedLayerName = ref('')
+    const selectedLayerData = ref(null)
 
     watch(geoJsonData, (newData) => {
       const initialVisibility = {}
@@ -130,6 +160,38 @@ export default {
       event.target.value = ''
     }
 
+    const openStyleEditor = (layerName, filename, type) => {
+      selectedLayerName.value = layerName
+      
+      // Find the layer data from geoJsonData
+      const layerData = geoJsonData.value.find(layer => layer.name === layerName)
+      selectedLayerData.value = layerData ? layerData.data : null
+      
+      styleEditorOpen.value = true
+    }
+
+    const closeStyleEditor = () => {
+      styleEditorOpen.value = false
+      selectedLayerName.value = ''
+      selectedLayerData.value = null
+    }
+
+    const applyLayerStyle = (styleConfig) => {
+      const { layerName, style, styleConfig: config } = styleConfig
+      
+      // Apply the style to the map through mapInstance
+      if (mapInstance?.value && mapInstance.value.applyLayerStyle) {
+        mapInstance.value.applyLayerStyle(layerName, style, config)
+      }
+      
+      // Also apply through mapRef if available
+      if (props.mapRef && props.mapRef.applyLayerStyle) {
+        props.mapRef.applyLayerStyle(layerName, style, config)
+      }
+      
+      console.log('Applied style to layer:', layerName, style)
+    }
+
     return {
       geoJsonData,
       loading,
@@ -137,7 +199,13 @@ export default {
       toggleLayer,
       handleToggleTouch,
       handleToggleTouchEnd,
-      handleFileUpload
+      handleFileUpload,
+      styleEditorOpen,
+      selectedLayerName,
+      selectedLayerData,
+      openStyleEditor,
+      closeStyleEditor,
+      applyLayerStyle
     }
   }
 }
@@ -262,6 +330,12 @@ export default {
   flex: 1;
 }
 
+.layer-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .layer-name {
   margin: 0 0 0.5rem 0;
   color: #fcfcfc;
@@ -286,6 +360,32 @@ export default {
   font-weight: 600;
   margin-right: 0.5rem;
   text-transform: uppercase;
+}
+
+.style-button {
+  background: rgba(252, 252, 252, 0.1);
+  border: 1px solid rgba(252, 252, 252, 0.2);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  color: #fcfcfc;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.style-button:hover {
+  background: rgba(252, 252, 252, 0.2);
+  transform: scale(1.05);
+  box-shadow: 0 4px 15px rgba(252, 252, 252, 0.2);
+}
+
+.style-button:active {
+  transform: scale(0.95);
 }
 
 .toggle-button {

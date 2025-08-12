@@ -2,6 +2,12 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  touch-action: manipulation;
+}
+
+.maplibregl-canvas,
+.maplibregl-canvas-container {
+  touch-action: pan-x pan-y pinch-zoom !important;
 }
 
 body {
@@ -15,6 +21,7 @@ body {
   -moz-user-select: none;
   -ms-user-select: none;
   user-select: none;
+  touch-action: pan-x pan-y;
 }
 
 #app {
@@ -22,6 +29,7 @@ body {
   width: 100vw;
   overflow: hidden;
   background: #1294b9 !important;
+  touch-action: pan-x pan-y;
 }
 
 .flutter-inspired {
@@ -351,7 +359,7 @@ body,
 }
 
 /* Photo Popup Styles */
-.photo-marker-popup .leaflet-popup-content-wrapper {
+.photo-marker-popup .maplibregl-popup-content {
   border-radius: 12px !important;
   border: none !important;
   background: #fcfcfc !important;
@@ -359,10 +367,12 @@ body,
   max-height: 500px !important;
   box-shadow: 0 8px 32px rgba(19, 148, 185, 0.15) !important;
   overflow: hidden !important;
+  padding: 0 !important;
 }
 
-.photo-marker-popup .leaflet-popup-tip {
+.photo-marker-popup .maplibregl-popup-tip {
   background: #fcfcfc !important;
+  border-top-color: #fcfcfc !important;
 }
 
 .photo-popup {
@@ -464,7 +474,7 @@ body,
 
 /* Mobile responsiveness for photo popups */
 @media (max-width: 360px) {
-  .photo-marker-popup .leaflet-popup-content-wrapper {
+  .photo-marker-popup .maplibregl-popup-content {
     width: calc(100vw - 40px) !important;
     max-width: 280px !important;
   }
@@ -476,7 +486,7 @@ body,
 }
 
 @media (max-height: 600px) {
-  .photo-marker-popup .leaflet-popup-content-wrapper {
+  .photo-marker-popup .maplibregl-popup-content {
     max-height: 400px !important;
   }
   

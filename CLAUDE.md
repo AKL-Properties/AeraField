@@ -14,8 +14,8 @@
 ## Core Technologies
 
 - **Framework**: Vue.js
-- **Mapping Library**: Leaflet.js
-- **Basemap**: ESRI Light or Dark Canvas (without labels)
+- **Mapping Library**: MapLibre GL JS
+- **Basemap**: ESRI World Imagery (satellite tiles)
 - **Offline Support**: Service Worker
 - **Installability**: Fully installable on iOS and Android via `Add to Home Screen`
 
@@ -59,17 +59,18 @@
 
 ## Map Features
 
-- Leaflet map fills full screen
-- Disable scroll wheel zoom
-- Enable gesture control (touch, pinch, drag)
-- Load ESRI basemap without labels
+- MapLibre GL JS map fills full screen
+- Disable scroll wheel zoom, enable touch gestures
+- Native vector-based rendering with smooth interactions
+- Load ESRI World Imagery satellite basemap
 - Automatically detect and load all `.geojson` files from the `/data` folder
-  - Each file renders as a separate layer
-  - File name is used as the layer name
+  - Each file renders as a separate layer with vector styling
+  - File name is used as the layer name  
   - Single symbol styling: transparent fill, teal stroke, 2px
   - Tap on feature shows popup with attributes in card format
 - Floating GPS Button:
   - Centers the map on user's location using `navigator.geolocation`
+  - Shows accuracy circle and user location marker
 
 ## Mobile UI Design
 

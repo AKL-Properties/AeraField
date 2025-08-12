@@ -1,12 +1,15 @@
 import { ref, watch } from 'vue'
-import L from 'leaflet'
+import maplibregl from 'maplibre-gl'
 
 export function usePhotoMarkers(mapInstance) {
   const photoMarkers = ref(new Map())
 
-  // Create custom photo marker icon
-  const createPhotoIcon = (thumbnail) => {
-    const iconHtml = `
+  // Create custom photo marker element
+  const createPhotoMarkerElement = (thumbnail) => {
+    const markerElement = document.createElement('div')
+    markerElement.className = 'custom-photo-marker'
+    
+    markerElement.innerHTML = `
       <div class="photo-marker">
         <div class="photo-marker-inner">
           <img src="${thumbnail}" alt="Photo" />
@@ -14,25 +17,25 @@ export function usePhotoMarkers(mapInstance) {
         <div class="photo-marker-pin"></div>
       </div>
     `
-
-    return L.divIcon({
-      html: iconHtml,
-      className: 'custom-photo-marker',
-      iconSize: [40, 50],
-      iconAnchor: [20, 45],
-      popupAnchor: [0, -45]
-    })
+    
+    markerElement.style.cssText = `
+      width: 40px;
+      height: 50px;
+      cursor: pointer;
+    `
+    
+    return markerElement
   }
 
   // Add photo marker to map
   const addPhotoMarker = (photo) => {
     if (!mapInstance.value || !photo.location) return null
 
-    const icon = createPhotoIcon(photo.thumbnail)
-    const marker = L.marker(
-      [photo.location.latitude, photo.location.longitude],
-      { icon }
-    )
+    const markerElement = createPhotoMarkerElement(photo.thumbnail)
+    
+    const marker = new maplibregl.Marker(markerElement)
+      .setLngLat([photo.location.longitude, photo.location.latitude])
+      .addTo(mapInstance.value)
 
     // Create popup content
     const popupContent = `
@@ -61,20 +64,12 @@ export function usePhotoMarkers(mapInstance) {
       </div>
     `
 
-    const popup = L.popup({
-      maxWidth: 300,
-      maxHeight: 500,
-      className: 'photo-marker-popup',
-      autoPan: true,
-      autoPanPadding: [20, 20],
-      autoClose: false,
-      closeOnEscapeKey: true,
-      keepInView: true,
-      closeButton: true
-    }).setContent(popupContent)
+    const popup = new maplibregl.Popup({
+      maxWidth: '300px',
+      className: 'photo-marker-popup'
+    }).setHTML(popupContent)
 
-    marker.bindPopup(popup)
-    marker.addTo(mapInstance.value)
+    marker.setPopup(popup)
 
     // Store reference
     photoMarkers.value.set(photo.id, marker)
@@ -98,18 +93,16 @@ export function usePhotoMarkers(mapInstance) {
   // Remove photo marker from map
   const removePhotoMarker = (photoId) => {
     const marker = photoMarkers.value.get(photoId)
-    if (marker && mapInstance.value) {
-      mapInstance.value.removeLayer(marker)
+    if (marker) {
+      marker.remove()
       photoMarkers.value.delete(photoId)
     }
   }
 
   // Clear all photo markers
   const clearAllPhotoMarkers = () => {
-    if (!mapInstance.value) return
-
     photoMarkers.value.forEach((marker) => {
-      mapInstance.value.removeLayer(marker)
+      marker.remove()
     })
     photoMarkers.value.clear()
   }
@@ -123,9 +116,14 @@ export function usePhotoMarkers(mapInstance) {
   const flyToPhotoMarker = (photoId) => {
     const marker = photoMarkers.value.get(photoId)
     if (marker && mapInstance.value) {
-      const latlng = marker.getLatLng()
-      mapInstance.value.flyTo(latlng, Math.max(mapInstance.value.getZoom(), 16))
-      marker.openPopup()
+      const lngLat = marker.getLngLat()
+      mapInstance.value.flyTo({
+        center: lngLat,
+        zoom: Math.max(mapInstance.value.getZoom(), 16)
+      })
+      if (marker.getPopup()) {
+        marker.togglePopup()
+      }
     }
   }
 
@@ -133,9 +131,19 @@ export function usePhotoMarkers(mapInstance) {
   const getPhotoMarkerBounds = () => {
     const positions = []
     photoMarkers.value.forEach((marker) => {
-      positions.push(marker.getLatLng())
+      const lngLat = marker.getLngLat()
+      positions.push([lngLat.lng, lngLat.lat])
     })
-    return positions.length > 0 ? L.latLngBounds(positions) : null
+    
+    if (positions.length === 0) return null
+    
+    const lngs = positions.map(pos => pos[0])
+    const lats = positions.map(pos => pos[1])
+    
+    return [
+      [Math.min(...lngs), Math.min(...lats)], // southwest
+      [Math.max(...lngs), Math.max(...lats)]  // northeast
+    ]
   }
 
   // Zoom to fit all photo markers
@@ -143,7 +151,7 @@ export function usePhotoMarkers(mapInstance) {
     const bounds = getPhotoMarkerBounds()
     if (bounds && mapInstance.value) {
       mapInstance.value.fitBounds(bounds, {
-        padding: [20, 20],
+        padding: 20,
         maxZoom: 16
       })
     }

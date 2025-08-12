@@ -41,6 +41,20 @@
       </div>
     </div>
 
+    <div class="settings-card basemap-card">
+      <h3 class="card-title">Map Style</h3>
+      <div class="basemap-options">
+        <button 
+          v-for="(basemap, key) in basemaps" 
+          :key="key"
+          @click="selectBasemap(key)"
+          :class="['basemap-option', { active: currentBasemap === key }]"
+        >
+          {{ basemap.name }}
+        </button>
+      </div>
+    </div>
+
     <div class="settings-card info-card">
       <button @click="showInformationModal" class="information-button">
         <i class="fas fa-circle-info button-icon"></i>
@@ -67,10 +81,18 @@ export default {
   },
   setup() {
     const { user, signOut } = inject('auth')
+    const mapInstance = inject('mapInstance', null)
     const isInformationModalOpen = ref(false)
     
     // Session photo management
     const { sessionPhotos, exportPhotosAsZip, exportPhotosAsKMZ } = useSessionPhotos()
+    
+    // Basemap management
+    const currentBasemap = ref('liberty')
+    const basemaps = {
+      liberty: { name: 'Liberty' },
+      fiord: { name: 'Fiord' }
+    }
     
     const geotaggedPhotosCount = computed(() => {
       return sessionPhotos.value.filter(photo => photo.location).length
@@ -86,6 +108,14 @@ export default {
 
     const closeInformationModal = () => {
       isInformationModalOpen.value = false
+    }
+
+    const selectBasemap = (basemapKey) => {
+      if (mapInstance?.value?.switchBasemap) {
+        mapInstance.value.switchBasemap(basemapKey)
+        currentBasemap.value = basemapKey
+        console.log(`Switched to ${basemaps[basemapKey].name} basemap`)
+      }
     }
 
     // Export functions
@@ -116,7 +146,10 @@ export default {
       sessionPhotos,
       geotaggedPhotosCount,
       exportZIP,
-      exportKMZ
+      exportKMZ,
+      currentBasemap,
+      basemaps,
+      selectBasemap
     }
   }
 }
@@ -142,6 +175,7 @@ export default {
   background: rgba(252, 252, 252, 0.2);
   border-radius: 16px;
   padding: 1.5rem;
+  margin-bottom: 1.5rem;
   border: 1px solid rgba(252, 252, 252, 0.2);
 }
 
@@ -172,9 +206,6 @@ export default {
   transform: translateY(-1px);
 }
 
-.info-card {
-  margin-top: 1rem;
-}
 
 .information-button {
   background: rgb(203, 179, 60, 0.986);
@@ -203,9 +234,6 @@ export default {
   font-size: 1.1rem;
 }
 
-.photo-export-card {
-  margin-bottom: 1rem;
-}
 
 .card-title {
   margin: 0 0 1rem 0;
@@ -270,5 +298,41 @@ export default {
 .kmz-button:hover:not(:disabled) {
   background: rgba(255, 152, 0, 0.2);
   border-color: rgba(255, 152, 0, 0.5);
+}
+
+
+.basemap-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.basemap-option {
+  background: rgba(252, 252, 252, 0.1);
+  border: 1px solid rgba(252, 252, 252, 0.3);
+  border-radius: 12px;
+  padding: 1rem;
+  color: #fcfcfc;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.basemap-option:hover {
+  background: rgba(252, 252, 252, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.basemap-option.active {
+  background: rgba(19, 148, 185, 0.8);
+  border-color: rgba(19, 148, 185, 1);
+  box-shadow: 0 4px 12px rgba(19, 148, 185, 0.3);
+}
+
+.basemap-option.active:hover {
+  background: rgba(19, 148, 185, 0.9);
 }
 </style>

@@ -43,7 +43,7 @@ export default {
 .home-view {
   padding: 2rem 1rem;
   padding-bottom: 100px;
-  background: #1394b9;
+  background: #1294b9;
   min-height: 100vh;
   color: #fcfcfc;
 }

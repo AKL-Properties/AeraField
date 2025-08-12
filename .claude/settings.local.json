@@ -31,7 +31,10 @@
       "Bash(timeout 10 npm run dev)",
       "mcp__ide__getDiagnostics",
       "Bash(timeout 10 npm run build:*)",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(timeout 15 npm run dev)",
+      "WebFetch(domain:localhost)",
+      "Bash(npm run lint)"
     ],
     "deny": []
   }
