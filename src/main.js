@@ -4,9 +4,9 @@ import './styles/main.css'
 
 import { library } from '@fortawesome/fontawesome-svg-core'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
-import { faLocationDot, faPalette, faTimes, faHome } from '@fortawesome/free-solid-svg-icons'
+import { faLocationDot, faPalette, faTimes, faHome, faEye, faEyeSlash, faInfo } from '@fortawesome/free-solid-svg-icons'
 
-library.add(faLocationDot, faPalette, faTimes, faHome)
+library.add(faLocationDot, faPalette, faTimes, faHome, faEye, faEyeSlash, faInfo)
 
 const app = createApp({
   render: () => h(App)

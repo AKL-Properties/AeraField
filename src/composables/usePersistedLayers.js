@@ -82,6 +82,18 @@ export function usePersistedLayers() {
     }
   }
 
+  // Update layer symbology
+  const updateLayerSymbology = (layerId, symbologyData) => {
+    const layer = persistedLayers.value.find(l => l.id === layerId)
+    if (layer) {
+      layer.symbology = symbologyData
+      saveToStorage()
+      console.log(`Updated symbology for layer: ${layer.name}`)
+      return true
+    }
+    return false
+  }
+
   // Clear all persisted layers
   const clearAllPersistedLayers = () => {
     persistedLayers.value = []
@@ -213,6 +225,7 @@ export function usePersistedLayers() {
     removePersistedLayer,
     getPersistedLayer,
     updateLayerVisibility,
+    updateLayerSymbology,
     clearAllPersistedLayers,
     
     // Storage management

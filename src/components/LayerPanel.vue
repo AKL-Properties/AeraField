@@ -33,7 +33,8 @@
             <span class="layer-name">{{ layer.name }}</span>
             <div class="layer-meta">
               <span class="layer-type">{{ layer.type }}</span>
-              <span class="layer-stored">📱 Stored</span>
+              <span v-if="layer.isPermanent" class="layer-permanent">🔒 Permanent</span>
+              <span v-else class="layer-stored">📱 Stored</span>
             </div>
           </div>
           <div class="layer-controls">
@@ -51,6 +52,7 @@
               <font-awesome-icon :icon="layer.visible ? faEye : faEyeSlash" />
             </button>
             <button 
+              v-if="!layer.isPermanent"
               @click="removeLayer(layer.id)"
               class="remove-button"
             >
@@ -79,14 +81,15 @@
       </div>
     </div>
 
-    <div v-if="loading" class="loading-overlay">
+    <div v-if="loading || supabaseLoading" class="loading-overlay">
       <div class="spinner"></div>
-      <span>Processing layer...</span>
+      <span v-if="supabaseLoading">Loading permanent layers...</span>
+      <span v-else>Processing layer...</span>
     </div>
 
-    <div v-if="error" class="error-message">
+    <div v-if="error || supabaseErrorMessage" class="error-message">
       <font-awesome-icon :icon="faExclamationTriangle" />
-      <span>{{ error }}</span>
+      <span>{{ error || supabaseErrorMessage }}</span>
       <button @click="clearError" class="close-error">×</button>
     </div>
 
@@ -95,8 +98,11 @@
       :visible="showSymbologyEditor"
       :layer-name="selectedLayer?.name || ''"
       :layer-data="selectedLayer?.data"
+      :layer-id="selectedLayer?.id || ''"
+      :existing-symbology="selectedLayer?.symbology"
       @close="closeSymbologyEditor"
       @apply="applySymbology"
+      @colorChange="onColorChange"
     />
   </div>
 </template>
@@ -117,6 +123,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import { useKMLLoader } from '../composables/useKMLLoader'
 import { usePersistedLayers } from '../composables/usePersistedLayers'
+import { useSupabaseLayers } from '../composables/useSupabaseLayers'
 import SymbologyEditor from './SymbologyEditor.vue'
 
 export default {
@@ -140,13 +147,28 @@ export default {
       addPersistedLayer, 
       removePersistedLayer, 
       updateLayerVisibility,
+      updateLayerSymbology,
       getStorageInfo 
     } = usePersistedLayers()
+    
+    // Supabase permanent layers
+    const {
+      permanentLayers,
+      fetchPermanentLayers,
+      updatePermanentLayerVisibility,
+      isLoading: supabaseLoading,
+      hasError: supabaseError,
+      error: supabaseErrorMessage
+    } = useSupabaseLayers()
 
-    // All layers are persisted - no more session layers
-    const allLayers = computed(() => 
-      persistedLayers.value.map(layer => ({ ...layer, isPersisted: true }))
-    )
+    // Combine permanent layers from Supabase with user-uploaded persisted layers
+    const allLayers = computed(() => {
+      const userLayers = persistedLayers.value.map(layer => ({ ...layer, isPersisted: true }))
+      const supabaseLayers = permanentLayers.value.map(layer => ({ ...layer, isPermanent: true }))
+      
+      // Put permanent layers first, then user layers
+      return [...supabaseLayers, ...userLayers]
+    })
 
     const openFilePicker = () => {
       fileInput.value.click()
@@ -324,15 +346,23 @@ export default {
     }
 
     const toggleLayerVisibility = (layerId) => {
-      // All layers are persisted now
-      const layer = persistedLayers.value.find(l => l.id === layerId)
+      if (!mapInstance.value) return
+
+      // Check if it's a permanent layer or persisted layer
+      const permanentLayer = permanentLayers.value.find(l => l.id === layerId)
+      const persistedLayer = persistedLayers.value.find(l => l.id === layerId)
       
-      if (!layer || !mapInstance.value) return
+      let layer = permanentLayer || persistedLayer
+      if (!layer) return
 
       layer.visible = !layer.visible
       
-      // Update persistent storage
-      updateLayerVisibility(layerId, layer.visible)
+      // Update appropriate storage
+      if (permanentLayer) {
+        updatePermanentLayerVisibility(layerId, layer.visible)
+      } else {
+        updateLayerVisibility(layerId, layer.visible)
+      }
       
       const map = mapInstance.value
 
@@ -351,15 +381,23 @@ export default {
     }
 
     const removeLayer = (layerId) => {
-      // All layers are persisted now
-      const layer = persistedLayers.value.find(l => l.id === layerId)
+      // Check if it's a permanent layer or persisted layer
+      const permanentLayer = permanentLayers.value.find(l => l.id === layerId)
+      const persistedLayer = persistedLayers.value.find(l => l.id === layerId)
       
+      let layer = permanentLayer || persistedLayer
       if (!layer) {
         console.warn(`Layer with id ${layerId} not found`)
         return
       }
 
-      // Confirm deletion for all layers since they're all persisted
+      // Permanent layers cannot be deleted
+      if (permanentLayer) {
+        alert(`"${layer.name}" is a permanent layer and cannot be deleted. You can only hide/show it.`)
+        return
+      }
+
+      // Confirm deletion for user-uploaded layers
       const confirmed = confirm(`Are you sure you want to permanently delete the layer "${layer.name}"?`)
       if (!confirmed) return
 
@@ -391,6 +429,12 @@ export default {
 
     const clearError = () => {
       error.value = ''
+      // Clear Supabase error through the composable if needed
+      if (supabaseErrorMessage.value) {
+        // Reset the error in the composable
+        const { error: supabaseError } = useSupabaseLayers()
+        supabaseError.value = null
+      }
     }
 
     const openPropertiesModal = (layer) => {
@@ -408,12 +452,42 @@ export default {
       
       console.log('Applying symbology:', symbologyData)
       const layer = selectedLayer.value
-      const map = mapInstance.value
       
       // Update layer styling based on categorical symbology
       updateLayerStyling(layer.id, symbologyData)
       
+      // Persist the symbology settings
+      persistLayerSymbology(layer.id, symbologyData)
+      
       closeSymbologyEditor()
+    }
+
+    const onColorChange = (symbologyData) => {
+      if (!selectedLayer.value || !mapInstance.value) return
+      
+      const layer = selectedLayer.value
+      
+      // Immediately update map styling without closing modal
+      updateLayerStyling(layer.id, symbologyData)
+      
+      // Persist the symbology settings immediately
+      persistLayerSymbology(layer.id, symbologyData)
+    }
+
+    const persistLayerSymbology = (layerId, symbologyData) => {
+      // Check if it's a permanent layer or persisted layer
+      const permanentLayer = permanentLayers.value.find(l => l.id === layerId)
+      const persistedLayer = persistedLayers.value.find(l => l.id === layerId)
+      
+      if (permanentLayer) {
+        // Store symbology in the permanent layer object
+        permanentLayer.symbology = symbologyData
+        console.log(`Persisted symbology for permanent layer: ${permanentLayer.name}`)
+      } else if (persistedLayer) {
+        // Store symbology in the persisted layer and save to localStorage
+        updateLayerSymbology(layerId, symbologyData)
+        console.log(`Persisted symbology for user layer: ${persistedLayer.name}`)
+      }
     }
 
     const updateLayerStyling = (layerId, symbologyData) => {
@@ -426,7 +500,18 @@ export default {
       const colorExpression = ['case']
       
       categories.forEach(category => {
-        colorExpression.push(['==', ['get', field], category.value])
+        // Handle different data types properly
+        const value = category.value
+        if (value === '' || value === null || value === undefined) {
+          // Handle empty/null values
+          colorExpression.push(['any', ['==', ['get', field], ''], ['==', ['get', field], null], ['!', ['has', field]]])
+        } else if (typeof value === 'number') {
+          // Handle numeric values
+          colorExpression.push(['==', ['to-number', ['get', field]], value])
+        } else {
+          // Handle string values
+          colorExpression.push(['==', ['to-string', ['get', field]], String(value)])
+        }
         colorExpression.push(category.color)
       })
       
@@ -456,28 +541,74 @@ export default {
       })
     }
 
-    // Load persisted layers to map when component mounts
-    const loadPersistedLayersToMap = () => {
+    // Load all layers (permanent + persisted) to map when component mounts
+    const loadAllLayersToMap = () => {
       if (!mapInstance.value) return
       
+      // Load permanent layers from Supabase
+      permanentLayers.value.forEach(layer => {
+        if (layer.visible !== false) {
+          addLayerToMap(layer)
+          
+          // Restore symbology from localStorage for permanent layers
+          const storageKey = generateLayerKey(layer)
+          const storedSymbology = storageKey ? getLayerSymbology(storageKey) : null
+          
+          if (storedSymbology) {
+            layer.symbology = storedSymbology
+            updateLayerStyling(layer.id, storedSymbology)
+            console.log(`Restored symbology for permanent layer: ${layer.name}`)
+          } else if (layer.symbology) {
+            // Apply existing symbology if available
+            updateLayerStyling(layer.id, layer.symbology)
+          }
+        }
+      })
+      
+      // Load user-uploaded persisted layers
       persistedLayers.value.forEach(layer => {
         if (layer.visible !== false) {
           addLayerToMap(layer)
+          
+          // For user layers, symbology is already stored in the layer object
+          // But also check unified storage for consistency
+          const storageKey = generateLayerKey(layer)
+          const storedSymbology = storageKey ? getLayerSymbology(storageKey) : null
+          
+          if (storedSymbology) {
+            layer.symbology = storedSymbology
+            updateLayerStyling(layer.id, storedSymbology)
+            console.log(`Restored symbology for user layer: ${layer.name}`)
+          } else if (layer.symbology) {
+            // Apply existing symbology from layer storage
+            updateLayerStyling(layer.id, layer.symbology)
+          }
         }
       })
-      console.log(`Loaded ${persistedLayers.value.length} persisted layers to map`)
+      
+      const totalLayers = permanentLayers.value.length + persistedLayers.value.length
+      console.log(`Loaded ${totalLayers} layers to map (${permanentLayers.value.length} permanent, ${persistedLayers.value.length} user-uploaded)`)
     }
 
-    // Initialize persisted layers when map becomes available
-    onMounted(() => {
-      // If map is already available, load layers immediately
+    // Initialize all layers when component mounts
+    onMounted(async () => {
+      // First, fetch permanent layers from Supabase
+      try {
+        console.log('Fetching permanent layers from Supabase on component mount...')
+        await fetchPermanentLayers()
+      } catch (err) {
+        console.error('Failed to fetch permanent layers on mount:', err)
+        error.value = `Failed to load permanent layers: ${err.message}`
+      }
+      
+      // Then load all layers to map when available
       if (mapInstance.value) {
-        loadPersistedLayersToMap()
+        loadAllLayersToMap()
       } else {
         // Wait for map to be available
         const checkMap = setInterval(() => {
           if (mapInstance.value) {
-            loadPersistedLayersToMap()
+            loadAllLayersToMap()
             clearInterval(checkMap)
           }
         }, 100)
@@ -502,6 +633,7 @@ export default {
       openPropertiesModal,
       closeSymbologyEditor,
       applySymbology,
+      onColorChange,
       showSymbologyEditor,
       selectedLayer,
       faPlus,
@@ -640,6 +772,15 @@ export default {
   font-weight: 500;
   background: rgba(46, 204, 113, 0.2);
   color: #2ecc71;
+}
+
+.layer-permanent {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  background: rgba(255, 193, 7, 0.2);
+  color: #f39c12;
 }
 
 .layer-controls {

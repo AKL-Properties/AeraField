@@ -40,7 +40,7 @@
             class="password-toggle"
             :class="{ dimmed: !showPassword }"
           >
-            <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+            <font-awesome-icon :icon="showPassword ? 'eye-slash' : 'eye'" />
           </button>
         </div>
 
@@ -218,7 +218,7 @@ export default {
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: #1294b9;
+  color: #1294b9 !important;
   cursor: pointer;
   padding: 0.5rem;
   font-size: 1.1rem;
@@ -228,10 +228,12 @@ export default {
 
 .password-toggle:hover {
   background: rgba(18, 148, 185, 0.1);
+  color: #1294b9 !important;
 }
 
 .password-toggle.dimmed {
-  opacity: 0.5;
+  opacity: 0.7;
+  color: #1294b9 !important;
 }
 
 .error-message {

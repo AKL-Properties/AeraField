@@ -80,7 +80,7 @@
 
     <div class="settings-card info-card">
       <button @click="showInformationModal" class="information-button" title="Information">
-        <i class="fas fa-info"></i>
+        <font-awesome-icon :icon="['fas', 'info']" />
       </button>
     </div>
 
@@ -317,7 +317,7 @@ export default {
 
 
 .information-button {
-  background: rgb(203, 179, 60, 0.986);
+  background: rgba(252, 252, 252, 0.1);
   border: 1px solid rgba(252, 252, 252, 0.3);
   border-radius: 50%;
   padding: 0.75rem;

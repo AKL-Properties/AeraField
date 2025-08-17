@@ -56,6 +56,7 @@ import { faHome, faLocationDot } from '@fortawesome/free-solid-svg-icons'
 import { useSessionPhotos } from '../composables/useSessionPhotos'
 import { usePhotoMarkers } from '../composables/usePhotoMarkers'
 import { usePersistedLayers } from '../composables/usePersistedLayers'
+import { useSupabaseLayers } from '../composables/useSupabaseLayers'
 
 export default {
   name: 'MapView',
@@ -78,6 +79,9 @@ export default {
     // Persisted layers management
     const { persistedLayers } = usePersistedLayers()
     
+    // Permanent layers from Supabase
+    const { permanentLayers } = useSupabaseLayers()
+    
     // GPS location variables
     const isLocating = ref(false)
     const isTracking = ref(false)
@@ -85,58 +89,36 @@ export default {
     const userLocationMarker = ref(null)
     const userAccuracyCircle = ref(null)
     
-    // Basemap management with automatic time-based switching
-    const currentBasemap = ref(getTimeBasedBasemap())
+    // Basemap management
+    const currentBasemap = ref('satellite')
     const mapInitialized = ref(false)
     const initializationAttempts = ref(0)
     const maxInitializationAttempts = 3
-    const timeBasedSwitchingEnabled = ref(true)
-    
-    // Function to determine basemap based on device time
-    function getTimeBasedBasemap() {
-      const now = new Date()
-      const hours = now.getHours()
-      const minutes = now.getMinutes()
-      
-      console.log(`Current time: ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`)
-      
-      // 6 AM to 6 PM (06:00 to 17:59) = Liberty style
-      // 6 PM to 6 AM (18:00 to 05:59) = Fiord style
-      if (hours >= 6 && hours < 18) {
-        console.log('Time is between 6 AM and 6 PM - using Liberty basemap')
-        return 'liberty'
-      } else {
-        console.log('Time is between 6 PM and 6 AM - using Fiord basemap')
-        return 'fiord'
-      }
-    }
-    
-    // Function to update basemap based on current time
-    function updateBasemapBasedOnTime() {
-      if (!timeBasedSwitchingEnabled.value) return
-      
-      const newBasemap = getTimeBasedBasemap()
-      if (newBasemap !== currentBasemap.value) {
-        console.log(`Time-based basemap switch: ${currentBasemap.value} -> ${newBasemap}`)
-        currentBasemap.value = newBasemap
-        
-        // If map is initialized, switch the basemap
-        if (mapInstance.value && mapInitialized.value) {
-          switchBasemap(newBasemap)
-        }
-      }
-    }
     
     const basemaps = {
-      liberty: {
-        name: 'Liberty',
-        styleUrl: 'https://tiles.openfreemap.org/styles/liberty',
-        attribution: '© OpenFreeMap contributors'
-      },
-      fiord: {
-        name: 'Fiord',
-        styleUrl: 'https://tiles.openfreemap.org/styles/fiord',
-        attribution: '© OpenFreeMap contributors'
+      satellite: {
+        name: 'ESRI Satellite',
+        styleUrl: {
+          "version": 8,
+          "sources": {
+            "esri-world-imagery": {
+              "type": "raster",
+              "tiles": [
+                "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              ],
+              "tileSize": 256,
+              "attribution": "© Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+            }
+          },
+          "layers": [
+            {
+              "id": "esri-satellite",
+              "type": "raster",
+              "source": "esri-world-imagery"
+            }
+          ]
+        },
+        attribution: '© Esri, Maxar, Earthstar Geographics, and the GIS User Community'
       },
       // Fallback option with simple style
       fallback: {
@@ -350,8 +332,7 @@ export default {
           initializationAttempts.value = 0 // Reset attempts on successful load
           error.value = null // Clear any previous errors
           
-          // Check if we need to switch to time-based basemap after load
-          updateBasemapBasedOnTime()
+          // Map loaded successfully with satellite basemap
           
           // Initialize photo markers
           photoMarkersComposable.value = usePhotoMarkers(mapInstance)
@@ -1005,6 +986,9 @@ export default {
         const hasLines = features.some(f => ['LineString', 'MultiLineString'].includes(f.geometry.type))
         const hasPolygons = features.some(f => ['Polygon', 'MultiPolygon'].includes(f.geometry.type))
 
+        // Get default style from shared_styles table if available
+        const defaultStyle = layer.defaultStyle || {}
+
         if (hasPolygons) {
           map.addLayer({
             id: `${layerId}-fill`,
@@ -1016,13 +1000,13 @@ export default {
                 'case',
                 ['has', 'fill', ['get', 'style']],
                 ['get', 'fill', ['get', 'style']],
-                '#20b2aa'
+                defaultStyle.fill_color || '#20b2aa'
               ],
               'fill-opacity': [
                 'case',
                 ['has', 'fill-opacity', ['get', 'style']],
                 ['get', 'fill-opacity', ['get', 'style']],
-                0.3
+                defaultStyle.fill_opacity || 0.3
               ]
             }
           })
@@ -1037,13 +1021,13 @@ export default {
                 'case',
                 ['has', 'stroke', ['get', 'style']],
                 ['get', 'stroke', ['get', 'style']],
-                '#20b2aa'
+                defaultStyle.stroke_color || '#20b2aa'
               ],
               'line-width': [
                 'case',
                 ['has', 'stroke-width', ['get', 'style']],
                 ['get', 'stroke-width', ['get', 'style']],
-                2
+                defaultStyle.stroke_width || 2
               ]
             }
           })
@@ -1060,13 +1044,13 @@ export default {
                 'case',
                 ['has', 'stroke', ['get', 'style']],
                 ['get', 'stroke', ['get', 'style']],
-                '#20b2aa'
+                defaultStyle.stroke_color || '#20b2aa'
               ],
               'line-width': [
                 'case',
                 ['has', 'stroke-width', ['get', 'style']],
                 ['get', 'stroke-width', ['get', 'style']],
-                2
+                defaultStyle.stroke_width || 2
               ]
             }
           })
@@ -1083,21 +1067,21 @@ export default {
                 'case',
                 ['has', 'fill', ['get', 'style']],
                 ['get', 'fill', ['get', 'style']],
-                '#20b2aa'
+                defaultStyle.fill_color || '#20b2aa'
               ],
               'circle-radius': [
                 'case',
                 ['has', 'radius', ['get', 'style']],
                 ['get', 'radius', ['get', 'style']],
-                6
+                defaultStyle.circle_radius || 6
               ],
               'circle-stroke-color': [
                 'case',
                 ['has', 'stroke', ['get', 'style']],
                 ['get', 'stroke', ['get', 'style']],
-                '#ffffff'
+                defaultStyle.stroke_color || '#ffffff'
               ],
-              'circle-stroke-width': 2
+              'circle-stroke-width': defaultStyle.stroke_width || 2
             }
           })
         }
@@ -1145,37 +1129,97 @@ export default {
     const loadPersistedLayersToMap = () => {
       if (!mapInstance.value) return
       
+      // Load permanent layers from Supabase
+      permanentLayers.value.forEach(layer => {
+        if (layer.visible !== false) {
+          addLayerToMap(layer)
+          // Apply any stored symbology after adding to map
+          if (layer.symbology) {
+            applyLayerSymbology(layer.id, layer.symbology)
+          }
+        }
+      })
+      
+      // Load user-uploaded persisted layers
       persistedLayers.value.forEach(layer => {
         if (layer.visible !== false) {
           addLayerToMap(layer)
+          // Apply any stored symbology after adding to map
+          if (layer.symbology) {
+            applyLayerSymbology(layer.id, layer.symbology)
+          }
         }
       })
-      console.log(`Loaded ${persistedLayers.value.length} persisted layers to map`)
+      
+      const totalLayers = permanentLayers.value.length + persistedLayers.value.length
+      console.log(`Loaded ${totalLayers} layers to map (${permanentLayers.value.length} permanent, ${persistedLayers.value.length} user-uploaded)`)
+    }
+
+    const applyLayerSymbology = (layerId, symbologyData) => {
+      if (!mapInstance.value || !symbologyData) return
+      
+      const map = mapInstance.value
+      const { field, categories } = symbologyData
+      
+      // Create color expression for MapLibre GL JS
+      const colorExpression = ['case']
+      
+      categories.forEach(category => {
+        // Handle different data types properly
+        const value = category.value
+        if (value === '' || value === null || value === undefined) {
+          // Handle empty/null values
+          colorExpression.push(['any', ['==', ['get', field], ''], ['==', ['get', field], null], ['!', ['has', field]]])
+        } else if (typeof value === 'number') {
+          // Handle numeric values
+          colorExpression.push(['==', ['to-number', ['get', field]], value])
+        } else {
+          // Handle string values
+          colorExpression.push(['==', ['to-string', ['get', field]], String(value)])
+        }
+        colorExpression.push(category.color)
+      })
+      
+      // Default color for unmatched values
+      colorExpression.push('#cccccc')
+      
+      // Update existing layers with categorical styling
+      const layerIds = [
+        `${layerId}-fill`,
+        `${layerId}-stroke`, 
+        `${layerId}-line`,
+        `${layerId}-point`
+      ]
+      
+      layerIds.forEach(id => {
+        if (map.getLayer(id)) {
+          const layerType = map.getLayer(id).type
+          
+          if (layerType === 'fill') {
+            map.setPaintProperty(id, 'fill-color', colorExpression)
+          } else if (layerType === 'line') {
+            map.setPaintProperty(id, 'line-color', colorExpression)
+          } else if (layerType === 'circle') {
+            map.setPaintProperty(id, 'circle-color', colorExpression)
+          }
+        }
+      })
+      
+      console.log(`Applied symbology to layer ${layerId} with field ${field}`)
     }
 
     onMounted(() => {
-      // Initialize with time-based basemap
-      currentBasemap.value = getTimeBasedBasemap()
-      console.log(`Initial basemap based on time: ${currentBasemap.value}`)
+      // Initialize with ESRI satellite basemap
+      currentBasemap.value = 'satellite'
+      console.log(`Initializing with ESRI satellite basemap`)
       
       initializeMap()
-      
-      // Set up automatic time-based switching every minute
-      const timeCheckInterval = setInterval(() => {
-        updateBasemapBasedOnTime()
-      }, 60000) // Check every minute
-      
-      // Store interval for cleanup
-      window.aeraFieldTimeInterval = timeCheckInterval
       
       // Expose functions for development testing
       if (process.env.NODE_ENV === 'development') {
         window.aeraField = {
-          getTimeBasedBasemap,
-          updateBasemapBasedOnTime,
           switchBasemap,
-          getCurrentBasemap: () => currentBasemap.value,
-          setTimeBasedSwitching: (enabled) => { timeBasedSwitchingEnabled.value = enabled }
+          getCurrentBasemap: () => currentBasemap.value
         }
       }
     })
@@ -1183,12 +1227,6 @@ export default {
     onUnmounted(() => {
       // Don't stop location tracking - keep it running even when component unmounts
       // This allows location tracking to persist across navigation and app state changes
-      
-      // Clean up time-based switching interval
-      if (window.aeraFieldTimeInterval) {
-        clearInterval(window.aeraFieldTimeInterval)
-        window.aeraFieldTimeInterval = null
-      }
       
       if (mapInstance.value) {
         mapInstance.value.remove()
@@ -1227,14 +1265,13 @@ export default {
       handleGPSClick,
       handleHomeClick,
       switchBasemap,
+      applyLayerSymbology,
       retryInitialization,
       handleTouchStart,
       handleTouchEnd,
       handleMouseDown,
       handleMouseUp,
       handleMouseLeave,
-      getTimeBasedBasemap,
-      updateBasemapBasedOnTime,
       // FontAwesome icons
       faHome,
       faLocationDot

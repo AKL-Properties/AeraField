@@ -45,6 +45,7 @@
                   v-model="category.color" 
                   class="color-picker"
                   :title="`Color for ${category.value}`"
+                  @input="onColorChange(category)"
                 />
                 <div 
                   class="color-preview" 
@@ -91,9 +92,17 @@ export default {
     layerData: {
       type: Object,
       default: null
+    },
+    layerId: {
+      type: String,
+      default: ''
+    },
+    existingSymbology: {
+      type: Object,
+      default: null
     }
   },
-  emits: ['close', 'apply'],
+  emits: ['close', 'apply', 'colorChange'],
   setup(props, { emit }) {
     const selectedField = ref('')
     const categories = ref([])
@@ -178,6 +187,20 @@ export default {
 
     const onFieldChange = () => {
       categories.value = extractCategories(selectedField.value)
+      // Apply existing colors if available
+      applyExistingColors()
+    }
+    
+    const applyExistingColors = () => {
+      if (!props.existingSymbology || !categories.value.length) return
+      
+      const existingCategories = props.existingSymbology.categories || []
+      categories.value.forEach(category => {
+        const existing = existingCategories.find(c => c.value === category.value)
+        if (existing) {
+          category.color = existing.color
+        }
+      })
     }
 
     const onApply = () => {
@@ -199,11 +222,33 @@ export default {
       emit('close')
     }
 
-    // Reset when modal becomes visible
+    const onColorChange = (category) => {
+      if (!selectedField.value || categories.value.length === 0) return
+      
+      const symbologyData = {
+        field: selectedField.value,
+        categories: categories.value.map(cat => ({
+          value: cat.value,
+          color: cat.color,
+          count: cat.count
+        }))
+      }
+      
+      emit('colorChange', symbologyData)
+    }
+
+    // Reset when modal becomes visible and load existing symbology
     watch(() => props.visible, (newVisible) => {
       if (newVisible) {
-        selectedField.value = ''
-        categories.value = []
+        // Load existing symbology if available
+        if (props.existingSymbology && props.existingSymbology.field) {
+          selectedField.value = props.existingSymbology.field
+          categories.value = extractCategories(selectedField.value)
+          applyExistingColors()
+        } else {
+          selectedField.value = ''
+          categories.value = []
+        }
       }
     })
 
@@ -213,7 +258,8 @@ export default {
       availableFields,
       onFieldChange,
       onApply,
-      onCancel
+      onCancel,
+      onColorChange
     }
   }
 }
@@ -233,32 +279,35 @@ export default {
   z-index: 1000;
   padding: 1rem;
   box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .symbology-modal {
-  background: #ffffff;
+  background: #1294b9;
   border-radius: 12px;
   width: 100%;
   max-width: 500px;
-  max-height: 90vh;
+  max-height: calc(100vh - 2rem);
+  min-height: 300px;
   display: flex;
   flex-direction: column;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+  margin: auto;
 }
 
 .modal-header {
   padding: 1.5rem;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #f8f9fa;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .modal-header h3 {
   margin: 0;
-  color: #333;
+  color: #ffffff;
   font-size: 1.3rem;
 }
 
@@ -267,20 +316,22 @@ export default {
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
-  color: #666;
+  color: #ffffff;
   padding: 0.25rem;
   border-radius: 4px;
   transition: background-color 0.2s;
 }
 
 .close-button:hover {
-  background: rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .modal-content {
   padding: 1.5rem;
   flex: 1;
   overflow-y: auto;
+  background: rgba(255, 255, 255, 0.95);
+  color: #333;
 }
 
 .layer-info h4 {
@@ -405,11 +456,11 @@ export default {
 
 .modal-footer {
   padding: 1.5rem;
-  border-top: 1px solid #e0e0e0;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
   display: flex;
   gap: 1rem;
   justify-content: flex-end;
-  background: #f8f9fa;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .cancel-button,
@@ -447,11 +498,18 @@ export default {
 
 /* Responsive adjustments */
 @media (max-width: 600px) {
+  .symbology-modal-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+  
   .symbology-modal {
     margin: 0;
     height: 100vh;
     max-height: 100vh;
+    min-height: 100vh;
     border-radius: 0;
+    width: 100%;
   }
   
   .modal-footer {
@@ -461,6 +519,25 @@ export default {
   .cancel-button,
   .apply-button {
     width: 100%;
+  }
+}
+
+/* Ensure modal content doesn't overflow on very small screens */
+@media (max-height: 500px) {
+  .symbology-modal {
+    max-height: calc(100vh - 1rem);
+  }
+  
+  .modal-header {
+    padding: 1rem;
+  }
+  
+  .modal-content {
+    padding: 1rem;
+  }
+  
+  .modal-footer {
+    padding: 1rem;
   }
 }
 </style>
