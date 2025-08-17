@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Test Layer</name>
+    <description>Sample KML for testing AeraField layer functionality</description>
+    
+    <Style id="redPoint">
+      <IconStyle>
+        <color>ff0000ff</color>
+        <scale>1.5</scale>
+      </IconStyle>
+    </Style>
+    
+    <Style id="blueLine">
+      <LineStyle>
+        <color>ffff0000</color>
+        <width>3</width>
+      </LineStyle>
+    </Style>
+    
+    <Style id="greenPoly">
+      <LineStyle>
+        <color>ff00ff00</color>
+        <width>2</width>
+      </LineStyle>
+      <PolyStyle>
+        <color>7f00ff00</color>
+      </PolyStyle>
+    </Style>
+    
+    <Placemark>
+      <name>Test Point</name>
+      <description>This is a test point marker</description>
+      <styleUrl>#redPoint</styleUrl>
+      <Point>
+        <coordinates>-122.0856545755255,37.42243077405461,0</coordinates>
+      </Point>
+    </Placemark>
+    
+    <Placemark>
+      <name>Test Line</name>
+      <description>This is a test line</description>
+      <styleUrl>#blueLine</styleUrl>
+      <LineString>
+        <coordinates>
+          -122.084,37.422,0
+          -122.085,37.423,0
+          -122.086,37.424,0
+        </coordinates>
+      </LineString>
+    </Placemark>
+    
+    <Placemark>
+      <name>Test Polygon</name>
+      <description>This is a test polygon</description>
+      <styleUrl>#greenPoly</styleUrl>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              -122.087,37.425,0
+              -122.088,37.425,0
+              -122.088,37.426,0
+              -122.087,37.426,0
+              -122.087,37.425,0
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+  </Document>
+</kml>

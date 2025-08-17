@@ -117,23 +117,7 @@ body {
   color: #fcfcfc;
 }
 
-.layer-panel {
-  position: fixed;
-  top: 0;
-  right: -320px;
-  width: 320px;
-  height: 100vh;
-  background: rgba(18, 148, 185, 0.95);
-  backdrop-filter: blur(10px);
-  border-left: 1px solid rgba(252, 252, 252, 0.2);
-  transition: right 0.3s ease;
-  z-index: 1001;
-  overflow-y: auto;
-}
-
-.layer-panel.open {
-  right: 0;
-}
+/* Layer panel styles removed from global CSS - now handled in component */
 
 .device-restriction {
   display: flex;

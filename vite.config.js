@@ -22,17 +22,6 @@ export default defineConfig({
               }
             }
           },
-          {
-            urlPattern: /\/data\/.*\.geojson$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'geojson-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 7
-              }
-            }
-          }
         ]
       },
       manifest: {

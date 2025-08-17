@@ -34,8 +34,16 @@
       "Bash(del:*)",
       "Bash(timeout 15 npm run dev)",
       "WebFetch(domain:localhost)",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "WebFetch(domain:tiles.openfreemap.org)",
+      "WebSearch",
+      "WebSearch",
+      "Bash(npm run:*)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits",
+    "additionalDirectories": [
+      "C:\\c\\Users\\kenz\\Desktop\\Code\\Git"
+    ]
   }
 }

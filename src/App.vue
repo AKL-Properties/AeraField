@@ -29,9 +29,9 @@ import InitializationPage from './components/InitializationPage.vue'
 import Login from './components/Login.vue'
 import BottomNav from './components/BottomNav.vue'
 import MapView from './components/MapView.vue'
-import LayerPanel from './components/LayerPanel.vue'
 import SettingsView from './components/SettingsView.vue'
 import CameraView from './components/CameraView.vue'
+import LayerPanel from './components/LayerPanel.vue'
 import { useAuth } from './composables/useAuth'
 
 export default {
@@ -42,9 +42,9 @@ export default {
     Login,
     BottomNav,
     MapView,
-    LayerPanel,
     SettingsView,
-    CameraView
+    CameraView,
+    LayerPanel
   },
   setup() {
     const { user, loading: isLoading, signOut } = useAuth()

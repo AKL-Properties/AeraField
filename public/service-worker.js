@@ -1,6 +1,6 @@
-const CACHE_NAME = 'aerafield-v4'
-const DATA_CACHE_NAME = 'aerafield-data-v4'
-const TILE_CACHE_NAME = 'aerafield-tiles-v4'
+const CACHE_NAME = 'aerafield-v5'
+const DATA_CACHE_NAME = 'aerafield-data-v5'
+const TILE_CACHE_NAME = 'aerafield-tiles-v5'
 
 // Cache configuration
 const TILE_CACHE_SIZE_LIMIT = 50 * 1024 * 1024 // 50MB for tiles
@@ -31,10 +31,6 @@ const TILE_URL_PATTERNS = [
   /\/\d+\/\d+\/\d+\.(png|jpg|jpeg)(\?.*)?$/
 ]
 
-// GeoJSON data patterns
-const GEOJSON_URL_PATTERNS = [
-  /^.*\/data\/.*\.geojson$/
-]
 
 // Cache management utilities
 async function manageTileCache() {
@@ -172,25 +168,6 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Handle GeoJSON requests
-  if (GEOJSON_URL_PATTERNS.some(pattern => pattern.test(request.url))) {
-    event.respondWith(
-      caches.open(DATA_CACHE_NAME).then((cache) => {
-        return cache.match(request).then((cachedResponse) => {
-          const fetchPromise = fetch(request).then((response) => {
-            if (response.status === 200) {
-              cache.put(request, response.clone())
-            }
-            return response
-          })
-
-          // Return cached version immediately, then update in background
-          return cachedResponse || fetchPromise
-        })
-      })
-    )
-    return
-  }
 
   // Handle Supabase Auth requests - always try network first
   if (request.url.includes('supabase.co')) {
@@ -254,6 +231,71 @@ self.addEventListener('sync', (event) => {
     )
   }
 })
+
+// Message handler for cache management
+self.addEventListener('message', (event) => {
+  console.log('[ServiceWorker] Message received:', event.data)
+  
+  if (event.data && event.data.type === 'CLEAR_ALL_CACHES') {
+    event.waitUntil(
+      clearAllCaches().then(() => {
+        // Send success message back to the client
+        event.ports[0].postMessage({ success: true, message: 'All caches cleared successfully' })
+      }).catch((error) => {
+        console.error('[ServiceWorker] Error clearing caches:', error)
+        event.ports[0].postMessage({ success: false, message: 'Failed to clear caches: ' + error.message })
+      })
+    )
+  } else if (event.data && event.data.type === 'CLEAR_TILES_CACHE') {
+    event.waitUntil(
+      clearTilesCache().then(() => {
+        event.ports[0].postMessage({ success: true, message: 'Map tiles cache cleared successfully' })
+      }).catch((error) => {
+        console.error('[ServiceWorker] Error clearing tiles cache:', error)
+        event.ports[0].postMessage({ success: false, message: 'Failed to clear tiles cache: ' + error.message })
+      })
+    )
+  } else if (event.data && event.data.type === 'GET_CACHE_INFO') {
+    event.waitUntil(
+      getCacheInfo().then((info) => {
+        event.ports[0].postMessage({ success: true, cacheInfo: info })
+      }).catch((error) => {
+        console.error('[ServiceWorker] Error getting cache info:', error)
+        event.ports[0].postMessage({ success: false, message: 'Failed to get cache info: ' + error.message })
+      })
+    )
+  }
+})
+
+// Cache management functions
+async function clearAllCaches() {
+  console.log('[ServiceWorker] Clearing all caches...')
+  const cacheNames = await caches.keys()
+  await Promise.all(cacheNames.map(cacheName => caches.delete(cacheName)))
+  console.log('[ServiceWorker] All caches cleared')
+}
+
+async function clearTilesCache() {
+  console.log('[ServiceWorker] Clearing tiles cache...')
+  await caches.delete(TILE_CACHE_NAME)
+  console.log('[ServiceWorker] Tiles cache cleared')
+}
+
+async function getCacheInfo() {
+  const cacheNames = await caches.keys()
+  const cacheInfo = {}
+  
+  for (const cacheName of cacheNames) {
+    const cache = await caches.open(cacheName)
+    const keys = await cache.keys()
+    cacheInfo[cacheName] = {
+      entryCount: keys.length,
+      urls: keys.slice(0, 5).map(req => req.url) // Show first 5 URLs as examples
+    }
+  }
+  
+  return cacheInfo
+}
 
 // Push notifications (for future use)
 self.addEventListener('push', (event) => {

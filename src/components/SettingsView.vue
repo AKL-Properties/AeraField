@@ -41,24 +41,46 @@
       </div>
     </div>
 
-    <div class="settings-card basemap-card">
-      <h3 class="card-title">Map Style</h3>
-      <div class="basemap-options">
+
+    <div class="settings-card cache-card">
+      <h3 class="card-title">Cache Management</h3>
+      <div class="cache-info" v-if="cacheInfo">
+        <p>Cached Data:</p>
+        <ul class="cache-list">
+          <li v-for="(cache, name) in cacheInfo" :key="name">
+            <strong>{{ name }}:</strong> {{ cache.entryCount }} items
+          </li>
+        </ul>
+      </div>
+      
+      <div class="cache-buttons">
         <button 
-          v-for="(basemap, key) in basemaps" 
-          :key="key"
-          @click="selectBasemap(key)"
-          :class="['basemap-option', { active: currentBasemap === key }]"
+          @click="clearTilesCache" 
+          :disabled="clearingCache"
+          class="cache-button tiles-button"
         >
-          {{ basemap.name }}
+          <i class="fas fa-map button-icon"></i>
+          {{ clearingCache ? 'Clearing...' : 'Clear Map Tiles' }}
+        </button>
+        
+        <button 
+          @click="clearAllCaches" 
+          :disabled="clearingCache"
+          class="cache-button clear-all-button"
+        >
+          <i class="fas fa-trash button-icon"></i>
+          {{ clearingCache ? 'Clearing...' : 'Clear All Cache' }}
         </button>
       </div>
+      
+      <p class="cache-description">
+        Clear map tiles to refresh basemap data, or clear all cache to reset the app completely (requires reload).
+      </p>
     </div>
 
     <div class="settings-card info-card">
-      <button @click="showInformationModal" class="information-button">
-        <i class="fas fa-circle-info button-icon"></i>
-        Information
+      <button @click="showInformationModal" class="information-button" title="Information">
+        <i class="fas fa-info"></i>
       </button>
     </div>
 
@@ -70,7 +92,7 @@
 </template>
 
 <script>
-import { inject, ref, computed } from 'vue'
+import { inject, ref, computed, onMounted, watch } from 'vue'
 import InformationModal from './InformationModal.vue'
 import { useSessionPhotos } from '../composables/useSessionPhotos'
 
@@ -79,7 +101,8 @@ export default {
   components: {
     InformationModal
   },
-  setup() {
+  props: ['mapRef'],
+  setup(props) {
     const { user, signOut } = inject('auth')
     const mapInstance = inject('mapInstance', null)
     const isInformationModalOpen = ref(false)
@@ -87,16 +110,96 @@ export default {
     // Session photo management
     const { sessionPhotos, exportPhotosAsZip, exportPhotosAsKMZ } = useSessionPhotos()
     
-    // Basemap management
-    const currentBasemap = ref('liberty')
-    const basemaps = {
-      liberty: { name: 'Liberty' },
-      fiord: { name: 'Fiord' }
-    }
     
     const geotaggedPhotosCount = computed(() => {
       return sessionPhotos.value.filter(photo => photo.location).length
     })
+
+    // Cache management
+    const cacheInfo = ref(null)
+    const clearingCache = ref(false)
+
+    // Service worker communication helper
+    const sendMessageToServiceWorker = (message) => {
+      return new Promise(async (resolve, reject) => {
+        // Wait for service worker to be ready if it's not yet active
+        if (!navigator.serviceWorker.controller) {
+          try {
+            // Wait for service worker to become ready
+            await navigator.serviceWorker.ready
+            
+            // Check again after waiting
+            if (!navigator.serviceWorker.controller) {
+              reject(new Error('Service worker is not controlling this page'))
+              return
+            }
+          } catch (error) {
+            reject(new Error('Service worker not available: ' + error.message))
+            return
+          }
+        }
+
+        const messageChannel = new MessageChannel()
+        messageChannel.port1.onmessage = (event) => {
+          if (event.data.success) {
+            resolve(event.data)
+          } else {
+            reject(new Error(event.data.message))
+          }
+        }
+
+        navigator.serviceWorker.controller.postMessage(message, [messageChannel.port2])
+      })
+    }
+
+    // Get cache information
+    const loadCacheInfo = async () => {
+      try {
+        const response = await sendMessageToServiceWorker({ type: 'GET_CACHE_INFO' })
+        cacheInfo.value = response.cacheInfo
+      } catch (error) {
+        console.error('Failed to load cache info:', error)
+      }
+    }
+
+    // Clear tiles cache only
+    const clearTilesCache = async () => {
+      if (!confirm('Clear map tiles cache? This will remove cached map tiles but keep other app data.')) {
+        return
+      }
+
+      clearingCache.value = true
+      try {
+        await sendMessageToServiceWorker({ type: 'CLEAR_TILES_CACHE' })
+        alert('Map tiles cache cleared successfully! The app will reload fresh tiles from the server.')
+        await loadCacheInfo() // Refresh cache info
+      } catch (error) {
+        console.error('Failed to clear tiles cache:', error)
+        alert(`Failed to clear tiles cache: ${error.message}`)
+      } finally {
+        clearingCache.value = false
+      }
+    }
+
+    // Clear all caches
+    const clearAllCaches = async () => {
+      if (!confirm('Clear all cache and reset the app? This will remove all cached data and the page will reload.')) {
+        return
+      }
+
+      clearingCache.value = true
+      try {
+        await sendMessageToServiceWorker({ type: 'CLEAR_ALL_CACHES' })
+        alert('All caches cleared successfully! The page will now reload.')
+        // Force reload after clearing all caches
+        window.location.reload()
+      } catch (error) {
+        console.error('Failed to clear all caches:', error)
+        alert(`Failed to clear all caches: ${error.message}`)
+      } finally {
+        clearingCache.value = false
+      }
+    }
 
     const handleSignOut = async () => {
       await signOut()
@@ -110,13 +213,6 @@ export default {
       isInformationModalOpen.value = false
     }
 
-    const selectBasemap = (basemapKey) => {
-      if (mapInstance?.value?.switchBasemap) {
-        mapInstance.value.switchBasemap(basemapKey)
-        currentBasemap.value = basemapKey
-        console.log(`Switched to ${basemaps[basemapKey].name} basemap`)
-      }
-    }
 
     // Export functions
     const exportZIP = async () => {
@@ -137,6 +233,11 @@ export default {
       }
     }
 
+    // Load cache info when component mounts
+    onMounted(() => {
+      loadCacheInfo()
+    })
+
     return {
       user,
       handleSignOut,
@@ -147,9 +248,10 @@ export default {
       geotaggedPhotosCount,
       exportZIP,
       exportKMZ,
-      currentBasemap,
-      basemaps,
-      selectBasemap
+      cacheInfo,
+      clearingCache,
+      clearTilesCache,
+      clearAllCaches
     }
   }
 }
@@ -157,26 +259,32 @@ export default {
 
 <style scoped>
 .settings-view {
-  padding: 2rem 1rem;
-  padding-bottom: 100px;
+  padding: 0.75rem;
+  padding-bottom: 80px;
   background: #1394b9;
-  min-height: 100vh;
+  height: calc(100vh - 70px);
   color: #fcfcfc;
+  max-width: 100vw;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .settings-title {
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
   color: #fcfcfc;
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   font-weight: 600;
 }
 
 .settings-card {
   background: rgba(252, 252, 252, 0.2);
   border-radius: 16px;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
   border: 1px solid rgba(252, 252, 252, 0.2);
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .user-info {
@@ -192,12 +300,13 @@ export default {
   background:rgba(0, 129, 204, 1);
   border: 1px solid rgba(0, 129, 204, 1);
   border-radius: 12px;
-  padding: 1rem;
+  padding: 0.75rem;
   color: #fcfcfc;
   cursor: pointer;
   width: 100%;
+  max-width: 200px;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.9rem;
   transition: all 0.2s ease;
 }
 
@@ -210,18 +319,19 @@ export default {
 .information-button {
   background: rgb(203, 179, 60, 0.986);
   border: 1px solid rgba(252, 252, 252, 0.3);
-  border-radius: 12px;
-  padding: 1rem;
-  color: #fcfcfc;
+  border-radius: 50%;
+  padding: 0.75rem;
+  color: #ffffff;
   cursor: pointer;
-  width: 100%;
+  width: 48px;
+  height: 48px;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 1.2rem;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  margin: 0 auto;
 }
 
 .information-button:hover {
@@ -236,14 +346,14 @@ export default {
 
 
 .card-title {
-  margin: 0 0 1rem 0;
+  margin: 0 0 0.75rem 0;
   color: #fcfcfc;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 600;
 }
 
 .photo-export-info {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
   color: #e2e8f0;
 }
 
@@ -258,23 +368,24 @@ export default {
 .export-buttons {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .export-button {
   background: rgba(252, 252, 252, 0.1);
   border: 1px solid rgba(252, 252, 252, 0.3);
   border-radius: 12px;
-  padding: 1rem;
+  padding: 0.75rem 0.5rem;
   color: #fcfcfc;
   cursor: pointer;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.3rem;
+  min-height: 44px;
 }
 
 .export-button:hover:not(:disabled) {
@@ -301,38 +412,127 @@ export default {
 }
 
 
-.basemap-options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+
+/* Cache Management Styles */
+.cache-info {
+  margin-bottom: 1rem;
+  color: #e2e8f0;
 }
 
-.basemap-option {
+.cache-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+}
+
+.cache-list li {
+  margin: 0.25rem 0;
+  font-size: 0.85rem;
+}
+
+.cache-list strong {
+  color: #fcfcfc;
+}
+
+.cache-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.cache-button {
   background: rgba(252, 252, 252, 0.1);
   border: 1px solid rgba(252, 252, 252, 0.3);
   border-radius: 12px;
-  padding: 1rem;
+  padding: 0.75rem 0.5rem;
   color: #fcfcfc;
   cursor: pointer;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.75rem;
   transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 44px;
   text-align: center;
+  word-wrap: break-word;
+  hyphens: auto;
 }
 
-.basemap-option:hover {
+.cache-button:hover:not(:disabled) {
   background: rgba(252, 252, 252, 0.2);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-.basemap-option.active {
-  background: rgba(19, 148, 185, 0.8);
-  border-color: rgba(19, 148, 185, 1);
-  box-shadow: 0 4px 12px rgba(19, 148, 185, 0.3);
+.cache-button:disabled {
+  background: rgba(108, 117, 125, 0.3);
+  color: rgba(252, 252, 252, 0.5);
+  cursor: not-allowed;
+  border-color: rgba(108, 117, 125, 0.3);
 }
 
-.basemap-option.active:hover {
-  background: rgba(19, 148, 185, 0.9);
+.tiles-button:hover:not(:disabled) {
+  background: rgba(255, 152, 0, 0.2);
+  border-color: rgba(255, 152, 0, 0.5);
+}
+
+.clear-all-button:hover:not(:disabled) {
+  background: rgba(244, 67, 54, 0.2);
+  border-color: rgba(244, 67, 54, 0.5);
+}
+
+.cache-description {
+  font-size: 0.7rem;
+  color: #cbd5e0;
+  margin: 0;
+  line-height: 1.2;
+  text-align: center;
+  padding: 0 0.25rem;
+}
+
+/* Responsive adjustments for small screens */
+@media (max-width: 480px) {
+  .settings-view {
+    padding: 0.75rem;
+  }
+  
+  .settings-card {
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .cache-button,
+  .export-button {
+    font-size: 0.7rem;
+    padding: 0.5rem 0.25rem;
+    min-height: 40px;
+  }
+  
+  .export-buttons,
+  .cache-buttons {
+    gap: 0.5rem;
+  }
+  
+  .card-title {
+    font-size: 1.1rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .settings-title {
+    font-size: 1.3rem;
+    margin-bottom: 1.5rem;
+  }
+}
+
+/* Ensure no horizontal overflow */
+* {
+  box-sizing: border-box;
+}
+
+.settings-view * {
+  max-width: 100%;
 }
 </style>

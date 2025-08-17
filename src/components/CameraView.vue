@@ -155,7 +155,8 @@ export default {
       addPhotoToSession, 
       exportPhotosAsZip, 
       exportPhotosAsKMZ,
-      startSession
+      startSession,
+      endSession
     } = useSessionPhotos()
 
     // Ensure session is active for camera usage
@@ -550,7 +551,12 @@ export default {
 
     const clearPhotos = () => {
       if (confirm('Are you sure you want to clear all photos? This action cannot be undone.')) {
+        // Clear local photos array
         capturedPhotos.splice(0)
+        // End session and clear all session storage
+        endSession()
+        // Start a new session
+        startSession()
       }
     }
 
@@ -623,7 +629,7 @@ export default {
   width: 100vw;
   height: 100vh;
   background: #000;
-  z-index: 1000;
+  z-index: 1001;
   display: flex;
   flex-direction: column;
 }
@@ -656,6 +662,7 @@ export default {
   right: 0;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, transparent 100%);
   padding: 2rem 1rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   justify-content: space-between;

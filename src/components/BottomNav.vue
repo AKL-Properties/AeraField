@@ -23,7 +23,7 @@
 
 <script>
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
-import { faMap, faLayerGroup, faCog, faCamera } from '@fortawesome/free-solid-svg-icons'
+import { faMap, faCog, faCamera, faLayerGroup } from '@fortawesome/free-solid-svg-icons'
 
 export default {
   name: 'BottomNav',
@@ -75,7 +75,7 @@ export default {
   left: 0;
   right: 0;
   height: 80px;
-  background: rgba(19, 148, 185, 0.95);
+  background: rgba(18, 148, 185, 0.95);
   backdrop-filter: blur(20px);
   border-top: 1px solid rgba(252, 252, 252, 0.2);
   display: flex;

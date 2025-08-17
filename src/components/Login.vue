@@ -23,17 +23,25 @@
           />
         </div>
 
-        <div class="form-group">
+        <div class="form-group password-group">
           <input
             v-model="password"
-            type="password"
+            :type="showPassword ? 'text' : 'password'"
             placeholder="Password"
             required
-            class="form-input"
+            class="form-input password-input"
             :class="{ focused: passwordFocused }"
             @focus="passwordFocused = true"
             @blur="passwordFocused = false"
           />
+          <button
+            type="button"
+            @click="togglePasswordVisibility"
+            class="password-toggle"
+            :class="{ dimmed: !showPassword }"
+          >
+            <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+          </button>
         </div>
 
         <div v-if="error" class="error-message">
@@ -72,6 +80,7 @@ export default {
     const error = ref('')
     const emailFocused = ref(false)
     const passwordFocused = ref(false)
+    const showPassword = ref(false)
 
     const handleSubmit = async () => {
       loading.value = true
@@ -89,6 +98,10 @@ export default {
       }
     }
 
+    const togglePasswordVisibility = () => {
+      showPassword.value = !showPassword.value
+    }
+
     return {
       email,
       password,
@@ -96,7 +109,9 @@ export default {
       error,
       emailFocused,
       passwordFocused,
-      handleSubmit
+      showPassword,
+      handleSubmit,
+      togglePasswordVisibility
     }
   }
 }
@@ -164,6 +179,10 @@ export default {
   margin-bottom: 1.5rem;
 }
 
+.password-group {
+  position: relative;
+}
+
 .form-input {
   width: 100%;
   padding: 1rem;
@@ -186,6 +205,33 @@ export default {
   border-color: #00bcd4;
   box-shadow: 0 0 0 3px rgba(0, 188, 212, 0.2);
   background: rgba(255, 255, 255, 0.9);
+}
+
+.password-input {
+  padding-right: 3rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #1294b9;
+  cursor: pointer;
+  padding: 0.5rem;
+  font-size: 1.1rem;
+  transition: all 0.3s ease;
+  border-radius: 4px;
+}
+
+.password-toggle:hover {
+  background: rgba(18, 148, 185, 0.1);
+}
+
+.password-toggle.dimmed {
+  opacity: 0.5;
 }
 
 .error-message {

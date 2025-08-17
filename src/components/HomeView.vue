@@ -8,9 +8,6 @@
       <button @click="$emit('navigate', 'map')" class="action-button primary">
         🗺️ Open Map View
       </button>
-      <button @click="$emit('open-layers')" class="action-button secondary">
-        📋 Manage Layers
-      </button>
     </div>
 
     <button @click="handleSignOut" class="sign-out-button">
@@ -24,7 +21,7 @@ import { inject } from 'vue'
 
 export default {
   name: 'HomeView',
-  emits: ['navigate', 'open-layers'],
+  emits: ['navigate'],
   setup() {
     const { signOut } = inject('auth')
 

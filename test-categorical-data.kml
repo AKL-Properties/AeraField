@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Categorical Test Data</name>
+    <description>Sample KML with categorical data for testing symbology editor</description>
+    
+    <Placemark>
+      <name>Farm Plot A</name>
+      <description>Agricultural area - corn crop</description>
+      <ExtendedData>
+        <Data name="crop_type">
+          <value>Corn</value>
+        </Data>
+        <Data name="status">
+          <value>Active</value>
+        </Data>
+        <Data name="size_acres">
+          <value>25.5</value>
+        </Data>
+      </ExtendedData>
+      <Point>
+        <coordinates>-122.084,37.422,0</coordinates>
+      </Point>
+    </Placemark>
+    
+    <Placemark>
+      <name>Farm Plot B</name>
+      <description>Agricultural area - wheat crop</description>
+      <ExtendedData>
+        <Data name="crop_type">
+          <value>Wheat</value>
+        </Data>
+        <Data name="status">
+          <value>Active</value>
+        </Data>
+        <Data name="size_acres">
+          <value>18.2</value>
+        </Data>
+      </ExtendedData>
+      <Point>
+        <coordinates>-122.085,37.423,0</coordinates>
+      </Point>
+    </Placemark>
+    
+    <Placemark>
+      <name>Farm Plot C</name>
+      <description>Agricultural area - soybean crop</description>
+      <ExtendedData>
+        <Data name="crop_type">
+          <value>Soybeans</value>
+        </Data>
+        <Data name="status">
+          <value>Pending</value>
+        </Data>
+        <Data name="size_acres">
+          <value>32.1</value>
+        </Data>
+      </ExtendedData>
+      <Point>
+        <coordinates>-122.086,37.424,0</coordinates>
+      </Point>
+    </Placemark>
+    
+    <Placemark>
+      <name>Farm Plot D</name>
+      <description>Agricultural area - corn crop</description>
+      <ExtendedData>
+        <Data name="crop_type">
+          <value>Corn</value>
+        </Data>
+        <Data name="status">
+          <value>Inactive</value>
+        </Data>
+        <Data name="size_acres">
+          <value>15.8</value>
+        </Data>
+      </ExtendedData>
+      <Point>
+        <coordinates>-122.087,37.425,0</coordinates>
+      </Point>
+    </Placemark>
+    
+    <Placemark>
+      <name>Farm Plot E</name>
+      <description>Agricultural area - rice crop</description>
+      <ExtendedData>
+        <Data name="crop_type">
+          <value>Rice</value>
+        </Data>
+        <Data name="status">
+          <value>Active</value>
+        </Data>
+        <Data name="size_acres">
+          <value>42.3</value>
+        </Data>
+      </ExtendedData>
+      <Point>
+        <coordinates>-122.088,37.426,0</coordinates>
+      </Point>
+    </Placemark>
+    
+    <Placemark>
+      <name>Irrigation Zone North</name>
+      <description>Northern irrigation coverage area</description>
+      <ExtendedData>
+        <Data name="crop_type">
+          <value>Wheat</value>
+        </Data>
+        <Data name="status">
+          <value>Active</value>
+        </Data>
+        <Data name="size_acres">
+          <value>12.5</value>
+        </Data>
+      </ExtendedData>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              -122.089,37.427,0
+              -122.090,37.427,0
+              -122.090,37.428,0
+              -122.089,37.428,0
+              -122.089,37.427,0
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    
+  </Document>
+</kml>

@@ -14,7 +14,7 @@
       @mouseleave="handleMouseLeave"
       class="home-fab"
     >
-      <font-awesome-icon :icon="'home'" />
+      <font-awesome-icon :icon="faHome" />
     </button>
 
     <button
@@ -26,15 +26,9 @@
       @mouseleave="handleMouseLeave"
       :class="['gps-fab', { 'locating': isLocating, 'tracking': isTracking, 'disabled': isTracking }]"
     >
-      <font-awesome-icon :icon="'location-dot'" />
+      <font-awesome-icon :icon="faLocationDot" />
     </button>
 
-    <div v-if="loading" class="loading-indicator">
-      <div class="loading-text">Loading layers...</div>
-      <div class="loading-subtext" v-if="initializationAttempts > 1">
-        Attempt {{ initializationAttempts }}/{{ maxInitializationAttempts }}
-      </div>
-    </div>
 
     <div v-if="error" class="error-indicator">
       <div class="error-text">{{ error }}</div>
@@ -44,13 +38,6 @@
         class="retry-button"
       >
         Retry
-      </button>
-      <button 
-        v-if="mapInitialized && error.includes('layer')" 
-        @click="() => { layersLoaded = false; loadGeoJSONLayers(); }" 
-        class="retry-button"
-      >
-        Reload Layers
       </button>
     </div>
 
@@ -64,27 +51,32 @@
 import { ref, onMounted, onUnmounted, watch, inject } from 'vue'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { useGeoJSONLoader } from '../composables/useGeoJSONLoader'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import { faHome, faLocationDot } from '@fortawesome/free-solid-svg-icons'
 import { useSessionPhotos } from '../composables/useSessionPhotos'
 import { usePhotoMarkers } from '../composables/usePhotoMarkers'
-import { useLayerStyles } from '../composables/useLayerStyles'
+import { usePersistedLayers } from '../composables/usePersistedLayers'
 
 export default {
   name: 'MapView',
+  components: {
+    FontAwesomeIcon
+  },
   props: {
     mapRef: Object
   },
   setup(props) {
     const mapContainer = ref(null)
     const mapInstance = ref(null)
-    const layers = ref(new Map())
-    const layersLoaded = ref(false)
-    const { geoJsonData, loading, error } = useGeoJSONLoader()
-    const { getStyleForLayer, loading: stylesLoading } = useLayerStyles()
+    const loading = ref(false)
+    const error = ref(null)
     
     // Session photo management
     const { sessionPhotos } = useSessionPhotos()
     const photoMarkersComposable = ref(null)
+    
+    // Persisted layers management
+    const { persistedLayers } = usePersistedLayers()
     
     // GPS location variables
     const isLocating = ref(false)
@@ -93,11 +85,47 @@ export default {
     const userLocationMarker = ref(null)
     const userAccuracyCircle = ref(null)
     
-    // Basemap management with fallback options
-    const currentBasemap = ref('liberty')
+    // Basemap management with automatic time-based switching
+    const currentBasemap = ref(getTimeBasedBasemap())
     const mapInitialized = ref(false)
     const initializationAttempts = ref(0)
     const maxInitializationAttempts = 3
+    const timeBasedSwitchingEnabled = ref(true)
+    
+    // Function to determine basemap based on device time
+    function getTimeBasedBasemap() {
+      const now = new Date()
+      const hours = now.getHours()
+      const minutes = now.getMinutes()
+      
+      console.log(`Current time: ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`)
+      
+      // 6 AM to 6 PM (06:00 to 17:59) = Liberty style
+      // 6 PM to 6 AM (18:00 to 05:59) = Fiord style
+      if (hours >= 6 && hours < 18) {
+        console.log('Time is between 6 AM and 6 PM - using Liberty basemap')
+        return 'liberty'
+      } else {
+        console.log('Time is between 6 PM and 6 AM - using Fiord basemap')
+        return 'fiord'
+      }
+    }
+    
+    // Function to update basemap based on current time
+    function updateBasemapBasedOnTime() {
+      if (!timeBasedSwitchingEnabled.value) return
+      
+      const newBasemap = getTimeBasedBasemap()
+      if (newBasemap !== currentBasemap.value) {
+        console.log(`Time-based basemap switch: ${currentBasemap.value} -> ${newBasemap}`)
+        currentBasemap.value = newBasemap
+        
+        // If map is initialized, switch the basemap
+        if (mapInstance.value && mapInitialized.value) {
+          switchBasemap(newBasemap)
+        }
+      }
+    }
     
     const basemaps = {
       liberty: {
@@ -137,9 +165,6 @@ export default {
     
     
     const mapInstanceProvider = inject('mapInstance', null)
-    if (mapInstanceProvider) {
-      mapInstanceProvider.value = mapInstance
-    }
 
     const retryInitialization = () => {
       setTimeout(() => {
@@ -241,13 +266,6 @@ export default {
           console.error('Null/undefined value detected in map data:', errorMessage)
           error.value = 'Data loading error detected. Attempting to recover...'
           
-          // Try to reload GeoJSON data with sanitization
-          setTimeout(() => {
-            if (geoJsonData.value.length > 0) {
-              layersLoaded.value = false
-              loadGeoJSONLayers()
-            }
-          }, 1000)
           
         } else if (errorMessage.includes('style') || errorMessage.includes('load')) {
           console.error('Map style loading error:', errorMessage)
@@ -264,11 +282,6 @@ export default {
           console.error('Map source/layer error:', errorMessage)
           error.value = 'Map layer loading error. Some features may not be visible.'
           
-          // Attempt to recover by reloading layers
-          setTimeout(() => {
-            layersLoaded.value = false
-            loadGeoJSONLayers()
-          }, 2000)
           
         } else {
           error.value = 'Map error detected. Please refresh the page if issues persist.'
@@ -293,11 +306,18 @@ export default {
         console.log('Map style data event:', {
           isSourceLoaded: e.isSourceLoaded,
           basemap: basemap.name,
-          styleLoaded: map.isStyleLoaded()
+          styleLoaded: map.isStyleLoaded(),
+          currentStyle: map.getStyle()?.name || 'Unknown'
         })
         
         if (e.isSourceLoaded) {
           console.log(`Map basemap '${basemap.name}' style loaded successfully`)
+          
+          // Log style sources for debugging
+          const style = map.getStyle()
+          if (style?.sources) {
+            console.log(`Style sources for ${basemap.name}:`, Object.keys(style.sources))
+          }
         }
       })
       
@@ -311,41 +331,38 @@ export default {
 
       mapInstance.value = map
       
-      // Expose methods on the map instance
-      map.applyLayerStyle = applyLayerStyle
-      map.toggleLayer = toggleLayer
+      // Expose methods and reactive state on the map instance
+      map.switchBasemap = switchBasemap
+      map.currentBasemap = currentBasemap
       
-      // Initialize photo markers after map is ready
+      // Update the provider with the map instance
+      if (mapInstanceProvider) {
+        mapInstanceProvider.value = map
+      }
+      
+      console.log('Map instance created with basemap methods exposed')
+      
+      // Initialize photo markers and persisted layers after map is ready
       map.on('load', () => {
         try {
-          console.log('Map load event fired, initializing photo markers')
+          console.log('Map load event fired, initializing photo markers and persisted layers')
           mapInitialized.value = true
           initializationAttempts.value = 0 // Reset attempts on successful load
           error.value = null // Clear any previous errors
           
+          // Check if we need to switch to time-based basemap after load
+          updateBasemapBasedOnTime()
+          
+          // Initialize photo markers
           photoMarkersComposable.value = usePhotoMarkers(mapInstance)
-        } catch (photoError) {
-          console.error('Failed to initialize photo markers:', photoError)
+          
+          // Load persisted layers
+          loadPersistedLayersToMap()
+        } catch (initError) {
+          console.error('Failed to initialize map features:', initError)
         }
       })
 
-      // Load GeoJSON layers when style is ready (only once)
-      map.once('styledata', () => {
-        try {
-          console.log('Style data ready, checking layer loading conditions:', {
-            styleLoaded: map.isStyleLoaded(),
-            geoJsonDataLength: geoJsonData.value.length,
-            layersLoaded: layersLoaded.value
-          })
-          
-          if (map.isStyleLoaded() && geoJsonData.value.length > 0) {
-            loadGeoJSONLayers()
-          }
-        } catch (layerError) {
-          console.error('Failed to load GeoJSON layers on style ready:', layerError)
-          error.value = 'Failed to load map layers. Please refresh the page.'
-        }
-      })
       
       console.log('MapLibre GL JS initialization completed successfully')
       
@@ -363,481 +380,11 @@ export default {
     }
 
 
-    const validateGeoJSONData = (data, layerName) => {
-      if (!data) {
-        throw new Error(`GeoJSON data is null or undefined for layer: ${layerName}`)
-      }
-      
-      if (typeof data !== 'object') {
-        throw new Error(`GeoJSON data is not an object for layer: ${layerName}`)
-      }
-      
-      if (!data.type || data.type !== 'FeatureCollection') {
-        throw new Error(`Invalid GeoJSON type for layer: ${layerName}. Expected 'FeatureCollection', got: ${data.type}`)
-      }
-      
-      if (!Array.isArray(data.features)) {
-        throw new Error(`GeoJSON features is not an array for layer: ${layerName}`)
-      }
-      
-      // Validate each feature
-      data.features.forEach((feature, index) => {
-        if (!feature) {
-          throw new Error(`Feature ${index} is null/undefined in layer: ${layerName}`)
-        }
-        
-        if (!feature.type || feature.type !== 'Feature') {
-          throw new Error(`Invalid feature type at index ${index} in layer: ${layerName}`)
-        }
-        
-        if (!feature.geometry) {
-          throw new Error(`Feature ${index} missing geometry in layer: ${layerName}`)
-        }
-        
-        if (!feature.geometry.type) {
-          throw new Error(`Feature ${index} missing geometry type in layer: ${layerName}`)
-        }
-        
-        if (!Array.isArray(feature.geometry.coordinates)) {
-          throw new Error(`Feature ${index} has invalid coordinates in layer: ${layerName}`)
-        }
-        
-        // Validate coordinate values
-        const validateCoordinates = (coords, depth = 0) => {
-          if (depth > 4) return // Prevent infinite recursion
-          
-          if (Array.isArray(coords)) {
-            coords.forEach((coord, i) => {
-              if (Array.isArray(coord)) {
-                validateCoordinates(coord, depth + 1)
-              } else if (typeof coord === 'number') {
-                if (!isFinite(coord)) {
-                  throw new Error(`Invalid coordinate value (${coord}) at feature ${index} in layer: ${layerName}`)
-                }
-              }
-            })
-          }
-        }
-        
-        try {
-          validateCoordinates(feature.geometry.coordinates)
-        } catch (coordError) {
-          console.error(`Coordinate validation failed for feature ${index} in layer ${layerName}:`, coordError)
-          throw coordError
-        }
-      })
-      
-      return true
-    }
 
-    const loadAeraLayerWithAdvancedStyling = async () => {
-      try {
-        console.log('🎨 Loading Aera layer with advanced categorical styling...')
-        
-        // Load Styles.json for Aera layer
-        const stylesResponse = await fetch('/data/Styles.json')
-        const stylesData = await stylesResponse.json()
-        
-        // Find the Aera style configuration
-        const aeraStyleConfig = stylesData.find(style => style.layer_id === 'Aera')
-        if (!aeraStyleConfig) {
-          console.warn('No Aera style configuration found in Styles.json, using default styling')
-          return false
-        }
-        
-        console.log('🎨 Aera style configuration loaded:', aeraStyleConfig)
-        
-        // Parse the advanced style configuration
-        const styleConfig = JSON.parse(aeraStyleConfig.style)
-        console.log('🎨 Parsed style configuration:', styleConfig)
-        
-        return styleConfig
-      } catch (error) {
-        console.error('Failed to load Aera advanced styling:', error)
-        return false
-      }
-    }
 
-    const loadGeoJSONLayers = async () => {
-      console.group('🚀 loadGeoJSONLayers: Starting layer loading process')
-      
-      try {
-        console.log('🔍 Pre-flight checks:', {
-          hasMapInstance: !!mapInstance.value,
-          dataLength: geoJsonData.value.length,
-          layersLoaded: layersLoaded.value,
-          mapStyleLoaded: mapInstance.value?.isStyleLoaded() || false,
-          mapInitialized: mapInitialized.value
-        })
-        
-        if (!mapInstance.value || !geoJsonData.value.length || layersLoaded.value) {
-          const skipReason = !mapInstance.value ? 'No map instance' : 
-                            !geoJsonData.value.length ? 'No GeoJSON data' :
-                            'Layers already loaded'
-          console.log(`❌ Skipping layer loading: ${skipReason}`)
-          console.groupEnd()
-          return
-        }
-        
-        // Check if the style is loaded before adding sources
-        if (!mapInstance.value.isStyleLoaded()) {
-          console.log('⏳ Map style not loaded yet, waiting...')
-          console.groupEnd()
-          return
-        }
 
-        console.log(`✅ All checks passed. Loading ${geoJsonData.value.length} GeoJSON layers...`)
-        console.log('📄 Layer data:', geoJsonData.value.map(layer => ({
-          name: layer.name,
-          filename: layer.filename,
-          featuresCount: layer.data?.features?.length || 0,
-          type: layer.type
-        })))
-        
-        for (const { name, data } of geoJsonData.value) {
-          try {
-            const layerId = name
-            
-            console.log(`Processing layer: ${name}`, {
-              layerId,
-              hasData: !!data,
-              dataType: typeof data
-            })
-            
-            // Validate GeoJSON data structure
-            validateGeoJSONData(data, name)
-            
-            // Skip if layer already exists
-            if (layers.value.has(name) && mapInstance.value.getSource(layerId)) {
-              console.log(`Layer ${name} already loaded, skipping...`)
-              continue
-            }
 
-            layers.value.set(name, layerId)
 
-            // Add source if it doesn't exist
-            if (!mapInstance.value.getSource(layerId)) {
-              console.log(`Adding source for layer: ${name}`)
-              mapInstance.value.addSource(layerId, {
-                type: 'geojson',
-                data: data,
-                tolerance: 0.375,
-                maxzoom: 18,
-                buffer: 64
-              })
-              console.log(`Source added successfully for layer: ${name}`)
-            } else {
-              console.log(`Source already exists for layer: ${name}`)
-            }
-
-            // Check if this is the Aera layer and apply advanced styling
-            if (name === 'Aera' || layerId === 'Aera') {
-              console.log('🎨 Applying advanced Aera styling...')
-              const aeraStyleConfig = await loadAeraLayerWithAdvancedStyling()
-              
-              if (aeraStyleConfig && aeraStyleConfig.categorical) {
-                // Apply categorical styling based on ACQUISITION GROUP
-                const categoricalField = aeraStyleConfig.categorical.field
-                const categories = aeraStyleConfig.categorical.categories
-                
-                console.log(`🎨 Applying categorical styling for field: ${categoricalField}`)
-                console.log(`🎨 Categories:`, categories)
-                
-                // Create MapLibre categorical expression for fill color
-                const fillColorExpression = ['case']
-                const fillOutlineExpression = ['case']
-                
-                categories.forEach(category => {
-                  fillColorExpression.push(['==', ['get', categoricalField], category.value])
-                  fillColorExpression.push(category.color)
-                  
-                  fillOutlineExpression.push(['==', ['get', categoricalField], category.value])
-                  fillOutlineExpression.push(category.strokeColor || '#ffffff')
-                })
-                
-                // Add default colors
-                fillColorExpression.push(aeraStyleConfig.categorical.defaultColor || '#cccccc')
-                fillOutlineExpression.push('#ffffff')
-                
-                // Get the topmost basemap layer ID to ensure GeoJSON layers appear above basemap
-                const topBasemapLayerId = getTopBasemapLayerId()
-                
-                // Add fill layer with categorical styling above basemap
-                if (!mapInstance.value.getLayer(layerId + '-fill')) {
-                  mapInstance.value.addLayer({
-                    id: layerId + '-fill',
-                    type: 'fill',
-                    source: layerId,
-                    filter: ['in', '$type', 'Polygon'],
-                    paint: {
-                      'fill-color': fillColorExpression,
-                      'fill-opacity': aeraStyleConfig.fill_opacity || 0.8,
-                      'fill-outline-color': fillOutlineExpression
-                    }
-                  }, topBasemapLayerId)
-                  console.log(`✅ Aera fill layer added with categorical styling above basemap`)
-                }
-                
-                // Add stroke layer above fill layer
-                if (!mapInstance.value.getLayer(layerId + '-stroke')) {
-                  mapInstance.value.addLayer({
-                    id: layerId + '-stroke',
-                    type: 'line',
-                    source: layerId,
-                    paint: {
-                      'line-color': fillOutlineExpression,
-                      'line-width': aeraStyleConfig.stroke_weight || 2,
-                      'line-opacity': aeraStyleConfig.stroke_opacity || 1
-                    }
-                  }, topBasemapLayerId)
-                  console.log(`✅ Aera stroke layer added with categorical styling above fill layer`)
-                }
-              } else {
-                console.log('🎨 No categorical styling found, applying default Aera styling')
-                // Fallback to standard styling
-                await applyStandardStyling(layerId, name)
-              }
-            } else {
-              // Apply standard styling for other layers
-              await applyStandardStyling(layerId, name)
-            }
-
-            // Add event handlers only once per layer
-            if (!mapInstance.value._layerHandlersAdded) {
-              mapInstance.value._layerHandlersAdded = new Set()
-            }
-
-            if (!mapInstance.value._layerHandlersAdded.has(layerId)) {
-              // Add click handlers for popups
-              const layersToAddHandlers = [layerId + '-fill', layerId + '-stroke', layerId + '-point']
-              
-              layersToAddHandlers.forEach(layerName => {
-                if (mapInstance.value.getLayer(layerName)) {
-                  mapInstance.value.on('click', layerName, (e) => {
-                    createPopup(e, name)
-                  })
-                  mapInstance.value.on('mouseenter', layerName, () => {
-                    mapInstance.value.getCanvas().style.cursor = 'pointer'
-                  })
-                  mapInstance.value.on('mouseleave', layerName, () => {
-                    mapInstance.value.getCanvas().style.cursor = ''
-                  })
-                }
-              })
-
-              mapInstance.value._layerHandlersAdded.add(layerId)
-            }
-
-            console.log(`Layer ${name} loaded successfully with styling`)
-            
-          } catch (layerError) {
-            console.error(`Error loading layer ${name}:`, layerError)
-            error.value = `Failed to load layer '${name}': ${layerError.message}`
-          }
-        }
-        
-      } catch (loadError) {
-        console.error('💥 Error in loadGeoJSONLayers:', {
-          error: loadError.message,
-          stack: loadError.stack?.split('\n').slice(0, 5)
-        })
-        error.value = `Failed to load map layers: ${loadError.message}`
-        console.groupEnd()
-        return
-      }
-
-      // Mark layers as loaded to prevent duplicate loading
-      layersLoaded.value = true
-      console.log('✅ All GeoJSON layers processed successfully')
-      
-      console.groupEnd() // Close the main loadGeoJSONLayers group
-    }
-
-    const applyStandardStyling = async (layerId, name) => {
-      // Get custom styles for this layer
-      const layerStyle = getStyleForLayer(name)
-      
-      console.log(`Layer ${name} style configuration:`, layerStyle)
-
-      // Standard styling for all layers
-      // Validate style properties
-      const requiredStyleProps = ['fill_color', 'fill_opacity', 'stroke_color', 'stroke_width', 'stroke_opacity', 'point_color', 'point_radius']
-      requiredStyleProps.forEach(prop => {
-        if (layerStyle[prop] === null || layerStyle[prop] === undefined) {
-          console.warn(`Style property ${prop} is null/undefined for layer ${name}, using default`)
-        }
-      })
-      
-      // Get the topmost basemap layer ID to ensure GeoJSON layers appear above basemap
-      const topBasemapLayerId = getTopBasemapLayerId()
-      
-      // Add fill layer for polygons (including MultiPolygons)
-      if (!mapInstance.value.getLayer(layerId + '-fill')) {
-        console.log(`Adding fill layer for: ${name} above basemap`)
-        
-        const fillPaint = {
-          'fill-color': layerStyle.fill_color || 'rgba(18, 148, 185, 0.1)',
-          'fill-opacity': layerStyle.fill_opacity ?? 0.2
-        }
-        
-        // Validate paint properties
-        Object.entries(fillPaint).forEach(([key, value]) => {
-          if (value === null || value === undefined) {
-            console.error(`Fill paint property ${key} is null/undefined for layer ${name}`)
-            throw new Error(`Invalid fill paint property: ${key}`)
-          }
-        })
-        
-        mapInstance.value.addLayer({
-          id: layerId + '-fill',
-          type: 'fill',
-          source: layerId,
-          filter: ['in', '$type', 'Polygon'],
-          paint: fillPaint
-        }, topBasemapLayerId)
-        console.log(`Fill layer added successfully for: ${name} above basemap`)
-      }
-
-      // Add stroke layer for all geometries above fill layer
-      if (!mapInstance.value.getLayer(layerId + '-stroke')) {
-        console.log(`Adding stroke layer for: ${name} above fill layer`)
-        
-        const strokePaint = {
-          'line-color': layerStyle.stroke_color || '#1294b9',
-          'line-width': layerStyle.stroke_width ?? 3,
-          'line-opacity': layerStyle.stroke_opacity ?? 1
-        }
-        
-        // Validate paint properties
-        Object.entries(strokePaint).forEach(([key, value]) => {
-          if (value === null || value === undefined) {
-            console.error(`Stroke paint property ${key} is null/undefined for layer ${name}`)
-            throw new Error(`Invalid stroke paint property: ${key}`)
-          }
-        })
-        
-        mapInstance.value.addLayer({
-          id: layerId + '-stroke',
-          type: 'line',
-          source: layerId,
-          paint: strokePaint
-        }, topBasemapLayerId)
-        console.log(`Stroke layer added successfully for: ${name} above fill layer`)
-      }
-
-      // Add point layer for point geometries above stroke layer
-      if (!mapInstance.value.getLayer(layerId + '-point')) {
-        console.log(`Adding point layer for: ${name} above stroke layer`)
-        
-        const pointPaint = {
-          'circle-color': layerStyle.point_color || '#1294b9',
-          'circle-radius': layerStyle.point_radius ?? 6,
-          'circle-stroke-color': layerStyle.point_stroke_color || '#ffffff',
-          'circle-stroke-width': layerStyle.point_stroke_width ?? 2
-        }
-        
-        // Validate paint properties
-        Object.entries(pointPaint).forEach(([key, value]) => {
-          if (value === null || value === undefined) {
-            console.error(`Point paint property ${key} is null/undefined for layer ${name}`)
-            throw new Error(`Invalid point paint property: ${key}`)
-          }
-        })
-        
-        mapInstance.value.addLayer({
-          id: layerId + '-point',
-          type: 'circle',
-          source: layerId,
-          filter: ['==', '$type', 'Point'],
-          paint: pointPaint
-        }, topBasemapLayerId)
-        console.log(`Point layer added successfully for: ${name} above stroke layer`)
-      }
-    }
-
-    const getTopBasemapLayerId = () => {
-      try {
-        if (!mapInstance.value) return undefined
-        
-        // Get all layers in the style
-        const style = mapInstance.value.getStyle()
-        if (!style || !style.layers) return undefined
-        
-        // Find all basemap layers (typically have specific patterns in their IDs)
-        // Common basemap layer patterns: background, land, water, roads, labels, etc.
-        const basemapPatterns = [
-          /^background/,
-          /^land/,
-          /^water/,
-          /^ocean/,
-          /^landcover/,
-          /^landuse/,
-          /^park/,
-          /^building/,
-          /^road/,
-          /^highway/,
-          /^tunnel/,
-          /^bridge/,
-          /^railway/,
-          /^admin/,
-          /^country/,
-          /^state/,
-          /^place/,
-          /^poi/,
-          /^transit/,
-          /label/,
-          /text/
-        ]
-        
-        // Find the topmost basemap layer
-        let topBasemapLayerId = undefined
-        
-        // Iterate through layers from top to bottom to find the last basemap layer
-        for (let i = style.layers.length - 1; i >= 0; i--) {
-          const layer = style.layers[i]
-          if (layer && layer.id) {
-            const isBasemapLayer = basemapPatterns.some(pattern => pattern.test(layer.id))
-            if (isBasemapLayer) {
-              // This is the topmost basemap layer
-              topBasemapLayerId = layer.id
-              break
-            }
-          }
-        }
-        
-        console.log('🎯 Top basemap layer identified:', topBasemapLayerId)
-        return topBasemapLayerId
-        
-      } catch (error) {
-        console.warn('Failed to identify top basemap layer:', error)
-        return undefined
-      }
-    }
-
-    const createPopup = (e, layerName) => {
-      const popupContent = Object.entries(e.features[0].properties)
-        .map(([key, value]) => `
-          <div class="popup-attribute">
-            <span class="key">${key}:</span> 
-            <span class="value">${value || 'N/A'}</span>
-          </div>
-        `).join('')
-
-      const popup = new maplibregl.Popup({
-        maxWidth: '280px',
-        className: 'custom-popup'
-      })
-        .setLngLat(e.lngLat)
-        .setHTML(`
-          <div class="popup-card">
-            <h3>${layerName}</h3>
-            <div class="popup-content">
-              ${popupContent}
-            </div>
-          </div>
-        `)
-        .addTo(mapInstance.value)
-    }
 
     const getMobileDeviceInfo = () => {
       const userAgent = navigator.userAgent
@@ -991,10 +538,9 @@ export default {
         }
       }
 
-      // Add accuracy circle above basemap layers
+      // Add accuracy circle
       if (!mapInstance.value.getSource('user-accuracy')) {
         mapInstance.value.addSource('user-accuracy', accuracySource)
-        const topBasemapLayerId = getTopBasemapLayerId()
         mapInstance.value.addLayer({
           id: 'user-accuracy',
           type: 'circle',
@@ -1013,7 +559,7 @@ export default {
             'circle-stroke-width': 2,
             'circle-stroke-opacity': 0.8
           }
-        }, topBasemapLayerId)
+        })
       } else {
         mapInstance.value.getSource('user-accuracy').setData(accuracySource.data)
       }
@@ -1025,9 +571,9 @@ export default {
       markerElement.className = 'user-location-marker'
       
       if (isTracking.value) {
-        // Tracking mode - blue dot with direction arrow
+        // Tracking mode - red dot with direction arrow and neon red blur
         markerElement.innerHTML = `
-          <div class="location-dot"></div>
+          <div class="location-dot tracking-dot"></div>
           <div class="location-arrow">↑</div>
         `
         markerElement.style.cssText = `
@@ -1037,14 +583,14 @@ export default {
           cursor: pointer;
         `
       } else {
-        // One-time location - simple blue dot
+        // One-time location - simple red dot with neon red blur
         markerElement.style.cssText = `
           width: 16px;
           height: 16px;
           border-radius: 50%;
-          background-color: #1294b9;
+          background-color: #e74c3c;
           border: 3px solid #ffffff;
-          box-shadow: 0 2px 8px rgba(19, 148, 185, 0.4);
+          box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4), 0 0 15px rgba(231, 76, 60, 0.6);
           cursor: pointer;
         `
       }
@@ -1193,113 +739,80 @@ export default {
     const lastTapTime = ref(0)
     
     const handleGPSClick = () => {
+      console.log('GPS button clicked', { isTracking: isTracking.value, isLocating: isLocating.value })
+      
+      if (isLocating.value) {
+        console.log('GPS is already locating, ignoring click')
+        return
+      }
+
       const currentTime = Date.now()
       const timeSinceLastTap = currentTime - lastTapTime.value
       
       if (isTracking.value && timeSinceLastTap < 500) {
         // Double tap to stop tracking
+        console.log('Double tap detected, stopping GPS tracking')
         stopLocationTracking()
         alert('GPS tracking stopped. Tap GPS button to start tracking again.')
       } else if (!isTracking.value) {
         // Start continuous tracking
+        console.log('Starting GPS tracking')
         startLocationTracking()
+      } else {
+        // Single tap while tracking - just locate once
+        console.log('Single tap while tracking, getting current location')
+        locateUser()
       }
       
       lastTapTime.value = currentTime
     }
 
     const handleHomeClick = () => {
-      if (!mapInstance.value) return
+      console.log('Home button clicked')
       
-      // Find the Aera layer in the loaded layers
-      const aeraLayerId = layers.value.get('Aera')
-      if (!aeraLayerId) {
-        console.warn('Aera layer not found')
+      if (!mapInstance.value) {
+        console.warn('Map instance not available')
+        alert('Map is not ready yet. Please wait a moment and try again.')
         return
       }
       
-      // Get the source data for the Aera layer
-      const aeraSource = mapInstance.value.getSource(aeraLayerId)
-      if (!aeraSource) {
-        console.warn('Aera source not found')
-        return
-      }
+      // Navigate to default center coordinates
+      const defaultCenter = [121.025, 14.285]
+      const defaultZoom = 13
       
-      // Get the GeoJSON data from the source
-      const aeraData = aeraSource._data
-      if (!aeraData || !aeraData.features || aeraData.features.length === 0) {
-        console.warn('Aera layer has no features to zoom to')
-        return
-      }
-      
-      // Calculate bounds of all features in the Aera layer
-      const bounds = new maplibregl.LngLatBounds()
-      
-      aeraData.features.forEach(feature => {
-        if (feature.geometry && feature.geometry.coordinates) {
-          const addCoordinatesToBounds = (coords) => {
-            if (feature.geometry.type === 'Point') {
-              bounds.extend(coords)
-            } else if (feature.geometry.type === 'LineString') {
-              coords.forEach(coord => bounds.extend(coord))
-            } else if (feature.geometry.type === 'Polygon') {
-              coords.forEach(ring => {
-                ring.forEach(coord => bounds.extend(coord))
-              })
-            } else if (feature.geometry.type === 'MultiPolygon') {
-              coords.forEach(polygon => {
-                polygon.forEach(ring => {
-                  ring.forEach(coord => bounds.extend(coord))
-                })
-              })
-            }
-          }
-          
-          addCoordinatesToBounds(feature.geometry.coordinates)
-        }
-      })
-      
-      // Zoom to the calculated bounds with padding
-      mapInstance.value.fitBounds(bounds, {
-        padding: { top: 50, bottom: 50, left: 50, right: 50 },
+      mapInstance.value.easeTo({
+        center: defaultCenter,
+        zoom: defaultZoom,
         duration: 1500
       })
       
-      console.log('Zoomed to Aera layer extent')
+      console.log('Zoomed to default center location')
     }
 
 
-    const toggleLayer = (layerName, visible) => {
-      const layerId = layers.value.get(layerName)
-      if (layerId && mapInstance.value) {
-        const fillLayerId = layerId + '-fill'
-        const strokeLayerId = layerId + '-stroke'
-        const pointLayerId = layerId + '-point'
-        
-        const visibility = visible ? 'visible' : 'none'
-        
-        if (mapInstance.value.getLayer(fillLayerId)) {
-          mapInstance.value.setLayoutProperty(fillLayerId, 'visibility', visibility)
-        }
-        if (mapInstance.value.getLayer(strokeLayerId)) {
-          mapInstance.value.setLayoutProperty(strokeLayerId, 'visibility', visibility)
-        }
-        if (mapInstance.value.getLayer(pointLayerId)) {
-          mapInstance.value.setLayoutProperty(pointLayerId, 'visibility', visibility)
-        }
-      }
-    }
 
     const handleTouchStart = (event) => {
       try {
-        // Prevent default to avoid conflicts with map touch events
-        event.preventDefault()
+        // Find the button element (could be the icon inside the button)
+        let target = event.target
+        while (target && !target.classList.contains('gps-fab') && !target.classList.contains('home-fab')) {
+          target = target.parentElement
+        }
         
-        const target = event.target || event.currentTarget
         if (target && target.style) {
           target.style.transform = 'scale(0.9)'
-          target.style.boxShadow = '0 2px 15px rgba(19, 148, 185, 0.6)'
           target.style.transition = 'all 0.1s ease'
+          
+          // Enhanced visual feedback based on button type
+          if (target.classList.contains('gps-fab')) {
+            if (target.classList.contains('tracking')) {
+              target.style.boxShadow = '0 2px 15px rgba(46, 204, 113, 0.8)'
+            } else {
+              target.style.boxShadow = '0 2px 15px rgba(19, 148, 185, 0.8)'
+            }
+          } else if (target.classList.contains('home-fab')) {
+            target.style.boxShadow = '0 2px 15px rgba(19, 148, 185, 0.8)'
+          }
         }
         
         // Add haptic feedback on supported devices
@@ -1313,10 +826,25 @@ export default {
 
     const handleTouchEnd = (event) => {
       try {
-        const target = event.target || event.currentTarget
+        // Find the button element (could be the icon inside the button)
+        let target = event.target
+        while (target && !target.classList.contains('gps-fab') && !target.classList.contains('home-fab')) {
+          target = target.parentElement
+        }
+        
         if (target && target.style) {
           target.style.transform = 'scale(1)'
-          target.style.boxShadow = '0 4px 20px rgba(19, 148, 185, 0.4)'
+          
+          // Reset to original shadow based on button type and state
+          if (target.classList.contains('gps-fab')) {
+            if (target.classList.contains('tracking')) {
+              target.style.boxShadow = '0 4px 20px rgba(46, 204, 113, 0.6)'
+            } else {
+              target.style.boxShadow = '0 4px 20px rgba(19, 148, 185, 0.4)'
+            }
+          } else if (target.classList.contains('home-fab')) {
+            target.style.boxShadow = '0 4px 20px rgba(19, 148, 185, 0.4)'
+          }
         }
       } catch (touchError) {
         console.warn('Touch end error:', touchError)
@@ -1358,85 +886,89 @@ export default {
     }
 
     const switchBasemap = (basemapKey) => {
-      if (!mapInstance.value || !basemaps[basemapKey]) return
+      console.log('switchBasemap called with:', basemapKey)
+      console.log('mapInstance.value:', !!mapInstance.value)
+      console.log('basemaps[basemapKey]:', !!basemaps[basemapKey])
+      
+      if (!mapInstance.value || !basemaps[basemapKey]) {
+        console.error('Cannot switch basemap:', { mapInstance: !!mapInstance.value, basemapExists: !!basemaps[basemapKey] })
+        return
+      }
       
       const basemap = basemaps[basemapKey]
-      currentBasemap.value = basemapKey
+      console.log(`Switching to ${basemap.name} basemap...`)
+      console.log('Style URL:', basemap.styleUrl)
       
-      // Reset layers loaded flag to allow re-loading after style change
-      layersLoaded.value = false
-      layers.value.clear()
+      // Update current basemap state immediately
+      currentBasemap.value = basemapKey
+      console.log('Updated currentBasemap to:', currentBasemap.value)
+      
+      // Set up error handling for style loading
+      const styleErrorHandler = (e) => {
+        console.error(`Failed to load ${basemap.name} basemap style:`, e)
+        error.value = `Failed to load ${basemap.name} basemap. Check your internet connection.`
+      }
+      
+      mapInstance.value.once('error', styleErrorHandler)
       
       // Load new vector style
-      mapInstance.value.setStyle(basemap.styleUrl)
+      try {
+        console.log(`About to call setStyle with URL: ${basemap.styleUrl}`)
+        mapInstance.value.setStyle(basemap.styleUrl)
+        console.log(`Style URL set for ${basemap.name}:`, basemap.styleUrl)
+      } catch (styleError) {
+        console.error(`Error setting style for ${basemap.name}:`, styleError)
+        error.value = `Error switching to ${basemap.name} basemap.`
+        return
+      }
       
-      // Re-add GeoJSON layers after style change (only once)
+      // Handle style loading events
+      mapInstance.value.once('style.load', () => {
+        console.log(`${basemap.name} basemap style loaded successfully`)
+        
+        // Remove error handler since style loaded successfully
+        mapInstance.value.off('error', styleErrorHandler)
+        
+        // Clear any previous errors
+        error.value = null
+        
+        // Log current style information for debugging
+        const style = mapInstance.value.getStyle()
+        if (style) {
+          console.log(`Active style for ${basemap.name}:`, {
+            name: style.name,
+            sources: Object.keys(style.sources || {}),
+            layers: style.layers?.length || 0
+          })
+        }
+        
+        // Update photo markers and reload persisted layers after style change
+        if (photoMarkersComposable.value) {
+          updatePhotoMarkers()
+        }
+        
+        // Reload persisted layers after basemap switch
+        loadPersistedLayersToMap()
+      })
+      
+      // Also handle styledata event as fallback
       mapInstance.value.once('styledata', () => {
         if (mapInstance.value.isStyleLoaded()) {
-          loadGeoJSONLayers()
-          updatePhotoMarkers()
+          console.log(`${basemap.name} basemap style data loaded`)
+          
+          // Update photo markers and reload persisted layers after style change
+          if (photoMarkersComposable.value) {
+            updatePhotoMarkers()
+          }
+          
+          // Reload persisted layers after basemap switch
+          loadPersistedLayersToMap()
         }
       })
       
-      console.log(`Switched to ${basemap.name} basemap`)
+      console.log(`Basemap switch initiated for ${basemap.name}`)
     }
 
-    // Layer styling functions
-    const applyLayerStyle = (layerName, style, styleConfig) => {
-      if (!mapInstance.value) {
-        console.warn('Cannot apply layer style: Map instance not available')
-        return
-      }
-
-      const layerId = layers.value.get(layerName)
-      if (!layerId) {
-        console.warn(`Cannot apply style: Layer '${layerName}' not found`)
-        return
-      }
-
-      try {
-        console.log(`Applying style to layer: ${layerName}`, style)
-
-        // Update fill layer if exists
-        const fillLayerId = layerId + '-fill'
-        if (mapInstance.value.getLayer(fillLayerId)) {
-          // Apply fill paint properties
-          if (style['fill-color']) {
-            mapInstance.value.setPaintProperty(fillLayerId, 'fill-color', style['fill-color'])
-          }
-          if (style['fill-opacity'] !== undefined) {
-            mapInstance.value.setPaintProperty(fillLayerId, 'fill-opacity', style['fill-opacity'])
-          }
-          if (style['fill-outline-color']) {
-            mapInstance.value.setPaintProperty(fillLayerId, 'fill-outline-color', style['fill-outline-color'])
-          }
-        }
-
-        // Update stroke layer if exists
-        const strokeLayerId = layerId + '-stroke'
-        if (mapInstance.value.getLayer(strokeLayerId)) {
-          if (style['fill-outline-color']) {
-            mapInstance.value.setPaintProperty(strokeLayerId, 'line-color', style['fill-outline-color'])
-          }
-          if (style['fill-outline-width'] !== undefined) {
-            mapInstance.value.setPaintProperty(strokeLayerId, 'line-width', style['fill-outline-width'])
-          }
-          if (style['fill-outline-opacity'] !== undefined) {
-            mapInstance.value.setPaintProperty(strokeLayerId, 'line-opacity', style['fill-outline-opacity'])
-          }
-        }
-
-        // Store the style configuration for persistence
-        if (!mapInstance.value._customLayerStyles) {
-          mapInstance.value._customLayerStyles = new Map()
-        }
-        mapInstance.value._customLayerStyles.set(layerName, { style, styleConfig })
-
-        console.log(`Successfully applied style to layer: ${layerName}`)
-      } catch (error) {
-        console.error(`Failed to apply style to layer ${layerName}:`, error)
-      }
-    }
 
     // Photo marker management functions
     const updatePhotoMarkers = () => {
@@ -1455,13 +987,208 @@ export default {
       })
     }
 
+    // Persisted layer management functions
+    const addLayerToMap = (layer) => {
+      if (!mapInstance.value) return
+
+      const map = mapInstance.value
+      const layerId = layer.id
+
+      if (layer.data.type === 'FeatureCollection') {
+        map.addSource(layerId, {
+          type: 'geojson',
+          data: layer.data
+        })
+
+        const features = layer.data.features
+        const hasPoints = features.some(f => f.geometry.type === 'Point')
+        const hasLines = features.some(f => ['LineString', 'MultiLineString'].includes(f.geometry.type))
+        const hasPolygons = features.some(f => ['Polygon', 'MultiPolygon'].includes(f.geometry.type))
+
+        if (hasPolygons) {
+          map.addLayer({
+            id: `${layerId}-fill`,
+            type: 'fill',
+            source: layerId,
+            filter: ['in', '$type', 'Polygon'],
+            paint: {
+              'fill-color': [
+                'case',
+                ['has', 'fill', ['get', 'style']],
+                ['get', 'fill', ['get', 'style']],
+                '#20b2aa'
+              ],
+              'fill-opacity': [
+                'case',
+                ['has', 'fill-opacity', ['get', 'style']],
+                ['get', 'fill-opacity', ['get', 'style']],
+                0.3
+              ]
+            }
+          })
+
+          map.addLayer({
+            id: `${layerId}-stroke`,
+            type: 'line',
+            source: layerId,
+            filter: ['in', '$type', 'Polygon'],
+            paint: {
+              'line-color': [
+                'case',
+                ['has', 'stroke', ['get', 'style']],
+                ['get', 'stroke', ['get', 'style']],
+                '#20b2aa'
+              ],
+              'line-width': [
+                'case',
+                ['has', 'stroke-width', ['get', 'style']],
+                ['get', 'stroke-width', ['get', 'style']],
+                2
+              ]
+            }
+          })
+        }
+
+        if (hasLines) {
+          map.addLayer({
+            id: `${layerId}-line`,
+            type: 'line',
+            source: layerId,
+            filter: ['in', '$type', 'LineString'],
+            paint: {
+              'line-color': [
+                'case',
+                ['has', 'stroke', ['get', 'style']],
+                ['get', 'stroke', ['get', 'style']],
+                '#20b2aa'
+              ],
+              'line-width': [
+                'case',
+                ['has', 'stroke-width', ['get', 'style']],
+                ['get', 'stroke-width', ['get', 'style']],
+                2
+              ]
+            }
+          })
+        }
+
+        if (hasPoints) {
+          map.addLayer({
+            id: `${layerId}-point`,
+            type: 'circle',
+            source: layerId,
+            filter: ['in', '$type', 'Point'],
+            paint: {
+              'circle-color': [
+                'case',
+                ['has', 'fill', ['get', 'style']],
+                ['get', 'fill', ['get', 'style']],
+                '#20b2aa'
+              ],
+              'circle-radius': [
+                'case',
+                ['has', 'radius', ['get', 'style']],
+                ['get', 'radius', ['get', 'style']],
+                6
+              ],
+              'circle-stroke-color': [
+                'case',
+                ['has', 'stroke', ['get', 'style']],
+                ['get', 'stroke', ['get', 'style']],
+                '#ffffff'
+              ],
+              'circle-stroke-width': 2
+            }
+          })
+        }
+
+        // Add click handlers for feature popups
+        const layerIds = [`${layerId}-fill`, `${layerId}-stroke`, `${layerId}-line`, `${layerId}-point`]
+        
+        layerIds.forEach(id => {
+          if (map.getLayer(id)) {
+            map.on('click', id, (e) => {
+              const feature = e.features[0]
+              const coordinates = e.lngLat
+              
+              let popupContent = `<div class="popup-card"><h3>${feature.properties.name || 'Feature'}</h3><div class="popup-content">`
+              
+              Object.entries(feature.properties).forEach(([key, value]) => {
+                if (key !== 'style' && value !== null && value !== undefined && value !== '') {
+                  popupContent += `<div class="popup-attribute"><span class="key">${key}:</span> <span class="value">${value}</span></div>`
+                }
+              })
+              
+              popupContent += '</div></div>'
+              
+              new maplibregl.Popup({
+                maxWidth: '280px',
+                className: 'custom-popup'
+              })
+                .setLngLat(coordinates)
+                .setHTML(popupContent)
+                .addTo(map)
+            })
+            
+            map.on('mouseenter', id, () => {
+              map.getCanvas().style.cursor = 'pointer'
+            })
+            
+            map.on('mouseleave', id, () => {
+              map.getCanvas().style.cursor = ''
+            })
+          }
+        })
+      }
+    }
+
+    const loadPersistedLayersToMap = () => {
+      if (!mapInstance.value) return
+      
+      persistedLayers.value.forEach(layer => {
+        if (layer.visible !== false) {
+          addLayerToMap(layer)
+        }
+      })
+      console.log(`Loaded ${persistedLayers.value.length} persisted layers to map`)
+    }
+
     onMounted(() => {
+      // Initialize with time-based basemap
+      currentBasemap.value = getTimeBasedBasemap()
+      console.log(`Initial basemap based on time: ${currentBasemap.value}`)
+      
       initializeMap()
+      
+      // Set up automatic time-based switching every minute
+      const timeCheckInterval = setInterval(() => {
+        updateBasemapBasedOnTime()
+      }, 60000) // Check every minute
+      
+      // Store interval for cleanup
+      window.aeraFieldTimeInterval = timeCheckInterval
+      
+      // Expose functions for development testing
+      if (process.env.NODE_ENV === 'development') {
+        window.aeraField = {
+          getTimeBasedBasemap,
+          updateBasemapBasedOnTime,
+          switchBasemap,
+          getCurrentBasemap: () => currentBasemap.value,
+          setTimeBasedSwitching: (enabled) => { timeBasedSwitchingEnabled.value = enabled }
+        }
+      }
     })
 
     onUnmounted(() => {
       // Don't stop location tracking - keep it running even when component unmounts
       // This allows location tracking to persist across navigation and app state changes
+      
+      // Clean up time-based switching interval
+      if (window.aeraFieldTimeInterval) {
+        clearInterval(window.aeraFieldTimeInterval)
+        window.aeraFieldTimeInterval = null
+      }
       
       if (mapInstance.value) {
         mapInstance.value.remove()
@@ -1469,65 +1196,17 @@ export default {
       }
     })
 
-    watch(geoJsonData, (newData, oldData) => {
-      console.group('👁️ GeoJSON Data Watcher Triggered')
-      console.log('🔍 Watch trigger details:', {
-        newDataLength: newData.length,
-        oldDataLength: oldData?.length || 0,
-        layersLoaded: layersLoaded.value,
-        mapInitialized: mapInitialized.value,
-        hasMapInstance: !!mapInstance.value,
-        styleLoaded: mapInstance.value?.isStyleLoaded() || false
-      })
-      
-      // Only load layers if we have data and haven't loaded them yet
-      if (newData.length > 0 && !layersLoaded.value && mapInstance.value && mapInitialized.value) {
-        console.log('✅ Conditions met for layer loading')
-        
-        try {
-          if (mapInstance.value.isStyleLoaded()) {
-            console.log('🎯 Map style is loaded, calling loadGeoJSONLayers immediately')
-            loadGeoJSONLayers()
-          } else {
-            console.log('⏳ Map style not loaded yet, waiting for styledata event')
-            // If map exists but style isn't loaded yet, wait for it
-            mapInstance.value.once('styledata', () => {
-              try {
-                console.log('🎯 Map style loaded via event, calling loadGeoJSONLayers')
-                if (mapInstance.value.isStyleLoaded()) {
-                  loadGeoJSONLayers()
-                }
-              } catch (watchError) {
-                console.error('❌ Error loading layers in style watch:', watchError)
-              }
-            })
-          }
-        } catch (watchError) {
-          console.error('❌ Error in geoJsonData watcher:', watchError)
-        }
-      } else {
-        console.log('❌ Conditions not met for layer loading:', {
-          hasData: newData.length > 0,
-          layersNotLoaded: !layersLoaded.value,
-          hasMap: !!mapInstance.value,
-          mapInitialized: mapInitialized.value
-        })
-      }
-      
-      console.groupEnd()
-    }, { deep: true })
 
     // Watch for changes in session photos to update markers
     watch(sessionPhotos, () => {
       updatePhotoMarkers()
     }, { deep: true, immediate: true })
 
-    // Expose methods for external access
+    // Expose methods and state for external access
     if (props.mapRef) {
       props.mapRef.locateUser = locateUser
-      props.mapRef.toggleLayer = toggleLayer
       props.mapRef.switchBasemap = switchBasemap
-      props.mapRef.applyLayerStyle = applyLayerStyle
+      props.mapRef.currentBasemap = currentBasemap
     }
 
 
@@ -1542,8 +1221,6 @@ export default {
       mapInitialized,
       initializationAttempts,
       maxInitializationAttempts,
-      layersLoaded,
-      loadGeoJSONLayers,
       locateUser,
       startLocationTracking,
       stopLocationTracking,
@@ -1555,7 +1232,12 @@ export default {
       handleTouchEnd,
       handleMouseDown,
       handleMouseUp,
-      handleMouseLeave
+      handleMouseLeave,
+      getTimeBasedBasemap,
+      updateBasemapBasedOnTime,
+      // FontAwesome icons
+      faHome,
+      faLocationDot
     }
   }
 }
@@ -1581,12 +1263,12 @@ export default {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background:#12949b;
+  background: linear-gradient(135deg, #1294b9, #26a6c4);
   border: none;
   color: #fcfcfc;
   font-size: 1.5rem;
   cursor: pointer;
-  box-shadow: 0 4px 20px rgba(44, 62, 80, 0.4);
+  box-shadow: 0 4px 20px rgba(19, 148, 185, 0.4);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -1595,8 +1277,8 @@ export default {
 }
 
 .home-fab:hover {
-  background: linear-gradient(135deg, #34495e, #2c3e50);
-  box-shadow: 0 6px 25px rgba(44, 62, 80, 0.6);
+  background: linear-gradient(135deg, #1294b9, #26a6c4);
+  box-shadow: 0 6px 25px rgba(19, 148, 185, 0.6);
   transform: scale(1.05);
 }
 
@@ -1913,13 +1595,27 @@ export default {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background-color: #1294b9;
+  background-color: #e74c3c;
   border: 3px solid #ffffff;
-  box-shadow: 0 2px 8px rgba(19, 148, 185, 0.4);
+  box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4), 0 0 15px rgba(231, 76, 60, 0.6);
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+}
+
+.user-location-marker .location-dot.tracking-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: #e74c3c;
+  border: 3px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4), 0 0 15px rgba(231, 76, 60, 0.6), 0 0 25px rgba(231, 76, 60, 0.3);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation: neon-red-pulse 2s infinite;
 }
 
 .user-location-marker .location-arrow {
@@ -1927,12 +1623,12 @@ export default {
   height: 0;
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
-  border-bottom: 8px solid #1294b9;
+  border-bottom: 8px solid #e74c3c;
   position: absolute;
   top: -2px;
   left: 50%;
   transform: translateX(-50%);
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3)) drop-shadow(0 0 5px rgba(231, 76, 60, 0.8));
   font-size: 0; /* Hide the arrow character, use CSS triangle instead */
 }
 
@@ -1946,5 +1642,17 @@ export default {
   border-left: 3px solid transparent;
   border-right: 3px solid transparent;
   border-bottom: 6px solid #ffffff;
+}
+
+@keyframes neon-red-pulse {
+  0% {
+    box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4), 0 0 15px rgba(231, 76, 60, 0.6), 0 0 25px rgba(231, 76, 60, 0.3);
+  }
+  50% {
+    box-shadow: 0 2px 12px rgba(231, 76, 60, 0.6), 0 0 20px rgba(231, 76, 60, 0.8), 0 0 35px rgba(231, 76, 60, 0.5);
+  }
+  100% {
+    box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4), 0 0 15px rgba(231, 76, 60, 0.6), 0 0 25px rgba(231, 76, 60, 0.3);
+  }
 }
 </style>

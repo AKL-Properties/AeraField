@@ -1,0 +1,54 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Test GeoJSON Point",
+        "description": "This is a test GeoJSON point",
+        "category": "marker",
+        "id": 1
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [121.025, 14.285]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Test GeoJSON Line",
+        "description": "This is a test GeoJSON line",
+        "category": "path",
+        "id": 2
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [121.020, 14.280],
+          [121.025, 14.285],
+          [121.030, 14.290]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Test GeoJSON Polygon",
+        "description": "This is a test GeoJSON polygon",
+        "category": "area",
+        "id": 3
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [121.022, 14.282],
+          [121.028, 14.282],
+          [121.028, 14.288],
+          [121.022, 14.288],
+          [121.022, 14.282]
+        ]]
+      }
+    }
+  ]
+}
